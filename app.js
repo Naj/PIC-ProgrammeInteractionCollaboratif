@@ -85,6 +85,23 @@ function load() {
 
 /* Les suppressions laissent une trace le temps que les autres appareils
    la reçoivent, puis disparaissent pour de bon. */
+/* Une ligne créée puis laissée entièrement vide ne veut rien dire :
+   on la retire au chargement suivant. */
+function pruneEmptyTasks() {
+  const keys = ["sujet", "collaboration", "objectif", "echeance", "action", "commentaire", "rex"];
+  let n = 0;
+  live().forEach(t => {
+    if (keys.every(k => !String(t[k] || "").trim())) {
+      t.deleted = true;
+      t.deletedAt = new Date().toISOString();
+      touch(t);
+      n++;
+    }
+  });
+  if (n) { save(); queueSync(); }
+  return n;
+}
+
 function purgeTombstones() {
   const limit = Date.now() - TOMBSTONE_DAYS * 864e5;
   const before = data.tasks.length;
@@ -98,7 +115,10 @@ function save() {
 const cols     = () => data.columns;
 const visCols  = () => data.columns.filter(c => c.visible);
 const labelOf  = k => (data.columns.find(c => c.key === k) || {}).label || k;
-const live     = () => data.tasks.filter(t => !t.deleted);
+const live     = () => data.tasks.filter(t => !t.deleted && t.kind !== "note");
+const notes    = () => data.tasks
+  .filter(t => !t.deleted && t.kind === "note")
+  .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 const actives  = () => live().filter(t => !t.archived);
 const archived = () => live().filter(t => t.archived);
 const touch    = t => { t.updatedAt = new Date().toISOString(); };
@@ -695,12 +715,19 @@ function buildPrint(mode) {
   }).join("") + "</tr>").join("");
 
   // Lignes vides pour écrire à la main, comme sur le tableau d'origine
-  const blanks = Math.max(0, Math.min(10, 16 - list.length));
+  const blanks = Math.max(0, Math.min(10, 16 - list.length - (mode === "archives" ? 0 : notes().length)));
   const blankRows = Array.from({ length: blanks },
     () => `<tr class="p-empty-row">${printCols.map(() => "<td></td>").join("")}</tr>`).join("");
 
+  const pending = mode === "archives" ? [] : notes();
+  const notesBlock = pending.length
+    ? `<div class="p-notes"><b>Notes en attente</b>${
+        pending.map(n => `<span>${esc(n.texte)}</span>`).join("")}</div>`
+    : "";
+
   area.innerHTML = head +
     `<table class="p-table"><thead><tr>${ths}</tr></thead><tbody>${rows}${blankRows}</tbody></table>` +
+    notesBlock +
     `<div class="p-foot"><span>PIC — Programme d'Interaction Collaboratif</span><span>by Majin</span></div>`;
 
   fitToPage(area);
@@ -901,6 +928,110 @@ function importJSON(file) {
   r.readAsText(file);
 }
 
+
+
+/* ============================================================
+   Notes en attente
+   Ce qui n'est pas encore une tâche : une idée, une relance,
+   un point à creuser. Une note se transforme en tâche d'un clic.
+   ============================================================ */
+function addNote(text) {
+  const v = String(text || "").trim();
+  if (!v) return false;
+  const now = new Date().toISOString();
+  data.tasks.unshift({ id:"n" + uid(), kind:"note", texte:v, createdAt:now, updatedAt:now });
+  save(); queueSync(); renderNotes();
+  return true;
+}
+
+function deleteNote(id) {
+  const n = data.tasks.find(t => t.id === id);
+  if (!n) return;
+  n.deleted = true;
+  n.deletedAt = new Date().toISOString();
+  touch(n);
+  save(); queueSync(); renderNotes();
+  lastUndo = { type:"delete", id };
+  toast("Note supprimée.", "warn", "Annuler", () => {
+    const t = data.tasks.find(x => x.id === id);
+    if (t) { delete t.deleted; delete t.deletedAt; touch(t); save(); queueSync(); renderNotes(); }
+  });
+}
+
+/* La note devient une tâche : son texte passe en sujet, la date du jour
+   est posée, et le curseur atterrit sur la collaboration à renseigner. */
+function noteToTask(id) {
+  const n = data.tasks.find(t => t.id === id);
+  if (!n) return;
+  const now = new Date().toISOString();
+  const t = {
+    id:uid(), date:todayISO(), sujet:n.texte, collaboration:"", objectif:"",
+    echeance:"", action:"", commentaire:"", rex:"",
+    archived:false, createdAt:now, updatedAt:now
+  };
+  data.tasks.unshift(t);
+  n.deleted = true;
+  n.deletedAt = now;
+  touch(n);
+  save(); queueSync();
+
+  setView("taches");
+  renderTable(); renderNotes(); renderBoard();
+  const tr = $(`tr[data-id="${t.id}"]`);
+  if (tr) tr.scrollIntoView({ block:"center", behavior:"smooth" });
+  openEditorFor(t.id, "collaboration");
+  toast(`« ${t.sujet} » est devenue une tâche. Complétez la collaboration et l'échéance.`, "ok");
+}
+
+function renderNotes() {
+  const list = notes();
+  const box = $("#notes-list");
+  if (!box) return;
+  box.innerHTML = "";
+  $("#notes-count").textContent = list.length;
+  $("#notes-empty").hidden = list.length > 0;
+
+  list.forEach((n, i) => {
+    const li = el("li", { class:"note", "data-id":n.id });
+    li.style.animationDelay = Math.min(i * 25, 300) + "ms";
+    li.appendChild(el("span", { class:"note-tick" }));
+    li.appendChild(el("span", {
+      class:"note-text", "data-act":"edit", tabindex:"0", role:"button",
+      title:"Cliquez pour modifier"
+    }, n.texte));
+    const acts = el("span", { class:"note-acts" });
+    acts.appendChild(el("button", { class:"mini-btn", "data-act":"convert" }, "En faire une tâche"));
+    acts.appendChild(el("button", { class:"note-x", "data-act":"del", title:"Supprimer la note", "aria-label":"Supprimer la note" }, "✕"));
+    li.appendChild(acts);
+    box.appendChild(li);
+  });
+}
+
+function editNote(id) {
+  const n = data.tasks.find(t => t.id === id);
+  const li = $(`.note[data-id="${id}"]`);
+  if (!n || !li) return;
+  const span = $(".note-text", li);
+  const input = el("input", { type:"text", class:"note-editor" });
+  input.value = n.texte;
+  span.replaceWith(input);
+  input.focus(); input.select();
+
+  let closed = false;
+  const commit = () => {
+    if (closed) return;
+    closed = true;
+    const v = input.value.trim();
+    if (!v) { deleteNote(id); return; }
+    if (v !== n.texte) { n.texte = v; touch(n); save(); queueSync(); }
+    renderNotes();
+  };
+  input.addEventListener("blur", commit);
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") { e.preventDefault(); closed = true; renderNotes(); }
+  });
+}
 
 /* ============================================================
    Synchronisation multi-appareils (Cloudflare D1)
@@ -1244,7 +1375,7 @@ function setView(v) {
   window.scrollTo({ top:0, behavior:"smooth" });
 }
 
-function renderAll() { renderTable(); renderArchives(); renderBoard(); }
+function renderAll() { renderTable(); renderNotes(); renderArchives(); renderBoard(); }
 
 function wire() {
   $$(".tab").forEach(t => t.addEventListener("click", () => setView(t.dataset.view)));
@@ -1346,6 +1477,30 @@ function wire() {
       if (Notification.permission === "granted") toast("Rappels système activés.", "ok");
     });
   });
+  /* Notes en attente */
+  $("#note-add").addEventListener("click", () => {
+    if (addNote($("#note-input").value)) $("#note-input").value = "";
+    $("#note-input").focus();
+  });
+  $("#note-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); $("#note-add").click(); }
+  });
+  $("#notes-list").addEventListener("click", e => {
+    const li = e.target.closest(".note");
+    const act = e.target.closest("[data-act]");
+    if (!li || !act) return;
+    if (act.dataset.act === "convert") noteToTask(li.dataset.id);
+    else if (act.dataset.act === "del") deleteNote(li.dataset.id);
+    else if (act.dataset.act === "edit") editNote(li.dataset.id);
+  });
+  $("#notes-list").addEventListener("keydown", e => {
+    const t = e.target.closest(".note-text");
+    if (t && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      editNote(t.closest(".note").dataset.id);
+    }
+  });
+
   /* Synchronisation */
   $("#btn-sync-on").addEventListener("click", async () => {
     const code = $("#cfg-space").value;
@@ -1422,6 +1577,7 @@ window.addEventListener("beforeinstallprompt", e => {
 /* ---------- Démarrage ---------- */
 function boot() {
   purgeTombstones();
+  pruneEmptyTasks();
   document.body.classList.toggle("is-dense", data.settings.dense);
   wire();
   renderAll();

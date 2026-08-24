@@ -77,6 +77,19 @@
       <button class="primary-btn" data-act="new-from-empty">+ Nouvelle tâche</button>
     </div>
     <p class="hint">Cliquez dans une cellule pour la remplir · <kbd>Tab</kbd> passe à la suivante · <kbd>Échap</kbd> annule</p>
+
+    <section class="notes-box" aria-labelledby="notes-title">
+      <header class="notes-head">
+        <h2 id="notes-title">Notes en attente <span class="notes-count" id="notes-count">0</span></h2>
+        <p>Ce qui n'est pas encore une tâche : une idée, une relance, un point à creuser.</p>
+      </header>
+      <div class="notes-add">
+        <input type="text" id="note-input" placeholder="Noter maintenant, transformer plus tard…" aria-label="Nouvelle note">
+        <button class="primary-btn" id="note-add">Ajouter</button>
+      </div>
+      <ul class="notes-list" id="notes-list"></ul>
+      <p class="notes-empty" id="notes-empty">Rien en attente. Tout ce qui compte est déjà dans le tableau.</p>
+    </section>
   </section>
 
   <!-- ─── Vue Archives ─── -->

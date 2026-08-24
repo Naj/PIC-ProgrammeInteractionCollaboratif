@@ -16,6 +16,12 @@ des fichiers statiques déposés à la racine, prêts pour Cloudflare Pages.
 - Recherche plein texte, filtre par collaboration, filtre par échéance (en retard / aujourd'hui / sous 7 jours / sans échéance).
 - Rail de couleur à gauche de chaque ligne : orange en retard, jaune aujourd'hui, bleu sous 7 jours, gris plus tard.
 
+**Notes en attente**
+- Une case sous le tableau pour ce qui n'est pas encore une tâche : une idée, une relance, un point à creuser.
+- Saisie au fil de l'eau, `Entrée` pour ajouter. Un clic sur une note la corrige.
+- *En faire une tâche* : la note devient une ligne du tableau, son texte passe en sujet, la date du jour est posée et le curseur atterrit sur la collaboration.
+- Les notes suivent la synchronisation comme les tâches, et s'impriment en bas de la feuille.
+
 **Archivage et REX**
 - Une case à cocher par ligne : la tâche part avec une animation et un son de validation.
 - 7 secondes pour annuler via le bandeau qui s'affiche.
@@ -74,6 +80,7 @@ des fichiers statiques déposés à la racine, prêts pour Cloudflare Pages.
 | Touche | Effet |
 |---|---|
 | `N` | Nouvelle tâche |
+| `Entrée` | Ajouter la note saisie |
 | `Tab` | Cellule suivante |
 | `Échap` | Annuler la saisie / fermer un panneau |
 | `Ctrl` + `P` | Imprimer la liste filtrée |
@@ -214,6 +221,17 @@ jaune `#FFD200` pour l'imminent. Angles droits, pas d'arrondi, typographie Helve
 
 Après modification de `app.js` ou `styles.css`, incrémentez la constante `CACHE` dans `sw.js`
 (`pic-majin-v2` → `pic-majin-v3`) pour forcer les navigateurs à récupérer les nouveaux fichiers.
+
+## Détails d'implémentation utiles à savoir
+
+Les notes en attente sont rangées dans la même liste que les tâches, avec un champ
+`kind: "note"`. Elles héritent ainsi de la synchronisation, de la fusion par horodatage et
+des pierres tombales sans qu'il faille toucher au schéma D1 ni à l'API. Partout ailleurs
+elles sont filtrées : elles ne comptent pas dans les indicateurs, ne déclenchent pas de
+rappel, n'apparaissent pas dans les archives.
+
+Au chargement, une ligne de tâche entièrement vide est supprimée : une ligne créée puis
+abandonnée n'encombre plus le tableau.
 
 ## Ce que le serveur ne fait pas
 
