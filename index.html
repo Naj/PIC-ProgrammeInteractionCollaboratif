@@ -50,6 +50,14 @@
         <input type="search" id="q" placeholder="Rechercher un sujet, une action, une personne…" aria-label="Rechercher">
       </div>
       <select id="f-collab" aria-label="Filtrer par collaboration"><option value="">Toutes collaborations</option></select>
+      <select id="f-statut" aria-label="Filtrer par statut">
+        <option value="">Tous statuts</option>
+        <option value="en-cours">En cours</option>
+        <option value="en-attente">En attente</option>
+        <option value="bloquee">Bloquée</option>
+        <option value="deleguee">Déléguée</option>
+      </select>
+      <select id="f-tag" aria-label="Filtrer par tag"></select>
       <select id="f-echeance" aria-label="Filtrer par échéance">
         <option value="">Toutes échéances</option>
         <option value="late">En retard</option>
@@ -58,6 +66,7 @@
         <option value="none">Sans échéance</option>
       </select>
       <div class="toolbar-end">
+        <button class="ghost-btn" id="btn-kanban">Kanban</button>
         <button class="ghost-btn" id="btn-columns">Colonnes</button>
         <button class="ghost-btn" id="btn-print">Imprimer</button>
       </div>
@@ -70,6 +79,7 @@
       </table>
     </div>
 
+    <div class="kanban-wrap" id="kanban-board" hidden></div>
     <div class="empty" id="empty-taches" hidden>
       <div class="empty-square"></div>
       <p class="empty-title">Aucune tâche ici</p>
@@ -99,6 +109,7 @@
         <input type="search" id="q-arch" placeholder="Rechercher dans les REX…" aria-label="Rechercher dans les archives">
       </div>
       <select id="f-collab-arch" aria-label="Filtrer par collaboration"><option value="">Toutes collaborations</option></select>
+      <select id="f-tag-arch" aria-label="Filtrer par tag"></select>
       <div class="toolbar-end">
         <button class="primary-btn" id="btn-synth">Synthèse REX</button>
         <button class="ghost-btn" id="btn-print-arch">Imprimer</button>
@@ -114,6 +125,11 @@
 
   <!-- ─── Vue Tableau de bord ─── -->
   <section class="view" id="view-bord" role="tabpanel">
+    <div class="toolbar" style="margin-bottom:10px">
+      <div class="toolbar-end">
+        <button class="ghost-btn" id="btn-print-bord">Exporter PDF</button>
+      </div>
+    </div>
     <div class="kpi-row" id="kpi-row"></div>
     <div class="board-grid">
       <article class="panel">
@@ -131,6 +147,10 @@
       <article class="panel">
         <h2 class="panel-title">État des échéances</h2>
         <div class="donut-wrap" id="chart-echeance"></div>
+      </article>
+      <article class="panel panel-wide">
+        <h2 class="panel-title">Charge par collaboration (8 semaines)</h2>
+        <div id="chart-charge"></div>
       </article>
       <article class="panel">
         <h2 class="panel-title">Prochaines échéances</h2>
@@ -151,7 +171,7 @@
       </div>
       <button class="icon-btn" id="sheet-close" aria-label="Fermer">✕</button>
     </header>
-    <div class="sheet-body" id="sheet-body"></div>
+    <div class="sheet-body" id="sheet-body"><div class="sheet-divider" style="display:none"></div></div>
     <footer class="sheet-foot">
       <button class="danger-btn" id="sheet-delete">Supprimer</button>
       <div class="sheet-foot-end">
@@ -193,6 +213,12 @@
           </div>
         </div>
         <p class="cfg-note">Perdu votre code ? Il est irrécupérable : notez-le dans votre gestionnaire de mots de passe.</p>
+      </section>
+      <section class="cfg-block">
+        <h3>Partage en lecture seule</h3>
+        <div id="share-panel">
+          <button class="ghost-btn" id="btn-share-open">Gérer le lien de partage</button>
+        </div>
       </section>
       <section class="cfg-block">
         <h3>Rappels</h3>

@@ -25,7 +25,29 @@ const COL_WIDTH = { date:7, sujet:12, collaboration:10, objectif:10,
 
 const DEFAULT_SETTINGS = {
   reminders:true, lead:1, sound:true, dense:false, intro:true, introSon:true,
-  sortKey:"echeance", sortDir:"asc"
+  sortKey:"echeance", sortDir:"asc",
+  kanban:false
+};
+
+/* Valeurs par défaut d'une tâche — utilisées à la création et à la migration */
+function taskDefaults() {
+  return {
+    statut:"en-cours",   // en-cours | en-attente | bloquee | deleguee
+    tags:[],             // ["formation","déploiement",…]
+    score:null,          // 1-5 étoiles, posé à l'archivage
+    recurrence:null,     // null | { freq:"semaine"|"mois"|"trimestre", count:0 }
+    linkedTo:[],         // [id, id, …]
+    comments:[],         // [{id,texte,at,updatedAt}] — stocké localement, sync par D1
+    shareToken:null      // token de partage lecture seule
+  };
+}
+
+/* Statuts disponibles */
+const STATUTS = {
+  "en-cours":   { label:"En cours",              color:"var(--o-orange)",  railCls:"st-encours" },
+  "en-attente": { label:"En attente",             color:"var(--o-yellow-d)",railCls:"st-attente" },
+  "bloquee":    { label:"Bloquée",                color:"var(--o-purple-d)",railCls:"st-bloquee" },
+  "deleguee":   { label:"Déléguée",              color:"var(--o-blue-d)",  railCls:"st-deleguee"}
 };
 
 const DEFAULT_SYNC = { enabled:false, space:"", lastAt:null, pushEndpoint:null };
@@ -64,7 +86,7 @@ const MONTHS = ["janv","févr","mars","avr","mai","juin","juil","août","sept","
 /* ---------- État ---------- */
 let data = load();
 let view = "taches";
-let filters = { q:"", collab:"", ech:"", qArch:"", collabArch:"" };
+let filters = { q:"", collab:"", ech:"", tag:"", statut:"", qArch:"", collabArch:"", tagArch:"" };
 let editing = null;          // fonction de validation de la cellule en cours
 let lastUndo = null;         // { type, task }
 
@@ -84,6 +106,18 @@ function load() {
     sync: { ...DEFAULT_SYNC, ...(d.sync || {}) },
     metaUpdatedAt: d.metaUpdatedAt || new Date(0).toISOString()
   };
+}
+
+/* Migration des tâches existantes vers le modèle v2 */
+function migrateTasks() {
+  let changed = false;
+  const defs = taskDefaults();
+  data.tasks.forEach(t => {
+    Object.entries(defs).forEach(([k, v]) => {
+      if (t[k] === undefined) { t[k] = Array.isArray(v) ? [] : v; changed = true; }
+    });
+  });
+  if (changed) save();
 }
 
 /* Ancien réglage « ambiance sonore » : seul le marimba subsiste. */
@@ -140,6 +174,12 @@ function touchMeta() { data.metaUpdatedAt = new Date().toISOString(); }
 /* ---------- Statut d'échéance ---------- */
 function statusOf(t) {
   if (t.archived) return { cls:"st-done", label:"Archivée" };
+  // Statut personnalisé non-en-cours prime sur l'échéance
+  const st = t.statut || "en-cours";
+  if (st !== "en-cours") {
+    const s = STATUTS[st] || STATUTS["en-cours"];
+    return { cls:"st-statut st-" + st, label:s.label };
+  }
   const d = daysUntil(t.echeance);
   if (d === null) return { cls:"st-none",  label:"Sans échéance" };
   if (d < 0)      return { cls:"st-late",  label:"En retard" };
@@ -157,6 +197,8 @@ function matches(t, q) {
 function filteredActives() {
   let list = actives().filter(t => matches(t, filters.q));
   if (filters.collab) list = list.filter(t => (t.collaboration || "") === filters.collab);
+  if (filters.tag) list = list.filter(t => (t.tags || []).includes(filters.tag));
+  if (filters.statut) list = list.filter(t => (t.statut || "en-cours") === filters.statut);
   if (filters.ech) {
     list = list.filter(t => {
       const d = daysUntil(t.echeance);
@@ -229,6 +271,7 @@ function renderTable() {
     tdC.appendChild(box);
     tr.appendChild(tdC);
 
+    // Badge statut dans la colonne Sujet
     visCols().forEach(c => {
       const td = el("td", { class:"k-" + c.key, "data-label":c.label });
       const val = t[c.key] || "";
@@ -238,7 +281,26 @@ function renderTable() {
         "data-act":"edit", "data-key":c.key, tabindex:"0", role:"button",
         title:c.label + " — cliquez pour modifier"
       });
-      if (shown) cell.appendChild(el("span", { class:"cell-text" }, shown));
+      if (c.key === "sujet") {
+        const wrap = el("div", { class:"sujet-wrap" });
+        if (shown) wrap.appendChild(el("span", { class:"cell-text" }, shown));
+        // Tags
+        const tags = t.tags || [];
+        if (tags.length) {
+          const trow = el("div", { class:"tag-row" });
+          tags.forEach(tg => trow.appendChild(el("span", { class:"tag-chip" }, tg)));
+          wrap.appendChild(trow);
+        }
+        // Statut personnalisé (badge)
+        const st = t.statut || "en-cours";
+        if (st !== "en-cours") {
+          const s = STATUTS[st] || STATUTS["en-cours"];
+          wrap.appendChild(el("span", { class:"statut-badge badge-" + st }, s.label));
+        }
+        cell.appendChild(wrap);
+      } else {
+        if (shown) cell.appendChild(el("span", { class:"cell-text" }, shown));
+      }
       td.appendChild(cell);
       tr.appendChild(td);
     });
@@ -281,6 +343,7 @@ function refreshCounters() {
   };
   fillSelect($("#f-collab"), opts(actives()), filters.collab, "Toutes collaborations");
   fillSelect($("#f-collab-arch"), opts(archived()), filters.collabArch, "Toutes collaborations");
+  refreshTagSelects();
 }
 function fillSelect(sel, values, current, placeholder) {
   sel.innerHTML = "";
@@ -354,6 +417,7 @@ function newTask() {
   const t = { id:uid(), date:todayISO(), sujet:"", collaboration:"", objectif:"",
               echeance:"", action:"", commentaire:"", rex:"",
               archived:false, deleted:false,
+              ...taskDefaults(),
               createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() };
   data.tasks.unshift(t);
   save(); queueSync();
@@ -376,6 +440,22 @@ function archiveTask(id, sourceEl) {
     t.archived = true;
     t.archivedAt = new Date().toISOString();
     touch(t);
+
+  // Récurrence
+  if (t.recurrence && t.recurrence.freq) {
+    const next = { ...t, id:uid(), archived:false, archivedAt:undefined,
+                   rex:"", score:null, comments:[], linkedTo:[],
+                   createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() };
+    const base = t.echeance ? new Date(t.echeance + "T00:00:00") : new Date();
+    const steps = { semaine:7, mois:30, trimestre:91 };
+    base.setDate(base.getDate() + (steps[t.recurrence.freq] || 7));
+    next.echeance = todayISO(base);
+    next.date = todayISO();
+    next.recurrence = { ...t.recurrence, count:(t.recurrence.count||0) + 1 };
+    data.tasks.unshift(next);
+    toast(`Tâche récurrente replanifiée au ${frDate(next.echeance)}.`, "ok");
+  }
+
     save(); queueSync();
     renderTable(); renderArchives(); renderBoard();
     lastUndo = { type:"archive", id };
@@ -470,6 +550,9 @@ function openSheet(id) {
 
   const body = $("#sheet-body");
   body.innerHTML = "";
+  buildSheetExtra(t, body);
+  const divider = el("div",{class:"sheet-divider"},"Champs");
+  body.appendChild(divider);
   cols().forEach(c => {
     const wrap = el("div", { class:"form-field" + (c.key === "rex" ? " is-rex" : "") });
     wrap.appendChild(el("label", { for:"f-" + c.key }, c.label));
@@ -670,6 +753,53 @@ function renderBoard() {
     requestAnimationFrame(() => { fill.style.width = (s.n / sMax) * 100 + "%"; });
   });
 
+  /* Courbe de charge par collaboration sur 8 semaines */
+  const chargeEl = $("#chart-charge");
+  if (chargeEl) {
+    chargeEl.innerHTML = "";
+    const collab8 = {};
+    const wks = [];
+    for (let i = 0; i < 8; i++) {
+      const d = new Date(Date.now() + i * 7 * 864e5);
+      const wk = d.toISOString().slice(0, 10);
+      wks.push(wk);
+    }
+    const collabs = [...new Set(actives().map(t => (t.collaboration||"").trim()).filter(Boolean))];
+    collabs.slice(0,6).forEach(c => {
+      collab8[c] = wks.map(wk => {
+        const wd = new Date(wk);
+        const we = new Date(wd.getTime() + 7*864e5);
+        return actives().filter(t => {
+          if ((t.collaboration||"").trim() !== c) return false;
+          const d = t.echeance ? new Date(t.echeance+"T00:00:00") : null;
+          return d && d >= wd && d < we;
+        }).length;
+      });
+    });
+    const maxC = Math.max(1, ...Object.values(collab8).flat());
+    const colors = ["var(--o-orange)","var(--o-blue)","var(--o-green)","var(--o-purple)","var(--o-yellow-d)","var(--o-pink-d)"];
+    const DAYS = ["S1","S2","S3","S4","S5","S6","S7","S8"];
+    const wrap = el("div", { style:"overflow-x:auto" });
+    const grid = el("div", { class:"charge-grid", style:`grid-template-columns:80px repeat(8,1fr)` });
+    grid.appendChild(el("span",{ class:"charge-lbl" },""));
+    DAYS.forEach(d => grid.appendChild(el("span",{ class:"charge-hd" }, d)));
+    collabs.slice(0,6).forEach((c, ci) => {
+      grid.appendChild(el("span",{ class:"charge-lbl", style:`color:${colors[ci%colors.length]}` }, c.slice(0,12)));
+      collab8[c].forEach(n => {
+        const cell = el("div", { class:"charge-cell" });
+        if (n > 0) {
+          const fill = el("div", { class:"charge-fill",
+            style:`height:${Math.round((n/maxC)*100)}%;background:${colors[ci%colors.length]}` });
+          cell.appendChild(fill);
+          cell.appendChild(el("span", { class:"charge-n" }, n));
+        }
+        grid.appendChild(cell);
+      });
+    });
+    wrap.appendChild(grid); chargeEl.appendChild(wrap);
+    if (!collabs.length) chargeEl.appendChild(el("p", { class:"cfg-note" }, "Les données apparaîtront avec des tâches ayant une collaboration et une échéance."));
+  }
+
   /* Prochaines échéances */
   const next = a.filter(t => t.echeance)
     .sort((x, y) => x.echeance.localeCompare(y.echeance)).slice(0, 6);
@@ -708,6 +838,7 @@ function countUp(node, target) {
 function buildPrint(mode) {
   const area = $("#print-area");
   if (mode === "synthese") return buildPrintSynth(area);
+  if (mode === "bord") return buildPrintBoard(area);
   const list = mode === "archives" ? filteredArchives() : filteredActives();
   const printCols = visCols();
 
@@ -745,6 +876,23 @@ function buildPrint(mode) {
 
   fitToPage(area);
 }
+function buildPrintBoard(area) {
+  const a = actives(), ar = archived(), all = live();
+  const late = a.filter(t => { const d=daysUntil(t.echeance); return d!==null&&d<0; });
+  const rate = all.length ? Math.round(ar.length/all.length*100) : 0;
+  const kpis = [
+    ["Tâches en cours", a.length], ["En retard", late.length],
+    ["Archivées", ar.length], ["Taux réalisation", rate+"%"]
+  ];
+  const boardArea = $("#print-area");
+  boardArea.innerHTML =
+    `<div class="p-head"><div class="p-title">TABLEAU DE BORD</div><div class="p-majin">by Majin</div></div>` +
+    `<div class="p-sub"><span>Édité le ${frDate(todayISO())}</span></div>` +
+    `<div class="p-kpi-row">${kpis.map(([l,n])=>`<div class="p-kpi"><strong>${n}</strong><span>${l}</span></div>`).join("")}</div>` +
+    `<div class="p-foot"><span>PIC — Programme d'Interaction Collaboratif</span><span>by Majin</span></div>`;
+  fitToPage(boardArea);
+}
+
 function buildPrintSynth(area) {
   const d = synthData(synthRange);
   const head = `<div class="p-head">
@@ -847,6 +995,9 @@ function toast(msg, kind, actionLabel, action) {
 function openCfg() {
   const ul = $("#col-list");
   ul.innerHTML = "";
+  buildSheetExtra(t, body);
+  const divider = el("div",{class:"sheet-divider"},"Champs");
+  body.appendChild(divider);
   cols().forEach(c => {
     const li = el("li", { class:"col-item" });
     const chk = el("input", { type:"checkbox" });
@@ -1045,6 +1196,348 @@ function editNote(id) {
     if (e.key === "Enter") { e.preventDefault(); commit(); }
     else if (e.key === "Escape") { e.preventDefault(); closed = true; renderNotes(); }
   });
+}
+
+
+/* ── Panneau détail v2 : statut, tags, score, récurrence, liens, fil ── */
+function buildSheetExtra(t, body) {
+  // Statut
+  const stWrap = el("div", { class:"form-field" });
+  stWrap.appendChild(el("label", {}, "Statut"));
+  const stSel = el("select", { id:"s-statut" });
+  Object.entries(STATUTS).forEach(([k, v]) => {
+    const o = el("option", { value:k }, v.label);
+    if ((t.statut || "en-cours") === k) o.selected = true;
+    stSel.appendChild(o);
+  });
+  stSel.addEventListener("change", () => {
+    t.statut = stSel.value; touch(t); save(); queueSync(); renderTable();
+  });
+  stWrap.appendChild(stSel); body.appendChild(stWrap);
+
+  // Tags
+  const tagWrap = el("div", { class:"form-field" });
+  tagWrap.appendChild(el("label", {}, "Tags (séparés par une virgule)"));
+  const tagIn = el("input", { type:"text", id:"s-tags",
+    placeholder:"formation, déploiement, outillage…",
+    value:(t.tags || []).join(", ") });
+  tagIn.addEventListener("change", () => {
+    t.tags = tagIn.value.split(",").map(s => s.trim()).filter(Boolean);
+    touch(t); save(); queueSync(); renderTable(); refreshTagSelects();
+  });
+  tagWrap.appendChild(tagIn); body.appendChild(tagWrap);
+
+  // Score
+  const scWrap = el("div", { class:"form-field" });
+  scWrap.appendChild(el("label", {}, "Difficulté perçue (1-5 étoiles)"));
+  const scRow = el("div", { class:"score-row" });
+  for (let i = 1; i <= 5; i++) {
+    const btn = el("button", { class:"star-btn" + (i <= (t.score || 0) ? " is-on" : ""),
+      "data-v":i, "aria-label":"Note " + i + " sur 5" }, "★");
+    btn.addEventListener("click", () => {
+      t.score = t.score === i ? null : i;
+      touch(t); save(); queueSync();
+      $$(".star-btn", scRow).forEach((b, j) => b.classList.toggle("is-on", j < (t.score || 0)));
+    });
+    scRow.appendChild(btn);
+  }
+  const scoreNote = el("span", { class:"score-note" },
+    t.score ? t.score + " / 5" : "Non noté");
+  scRow.appendChild(scoreNote);
+  scRow.addEventListener("click", () => {
+    scoreNote.textContent = (t.score || 0) + " / 5";
+  });
+  scWrap.appendChild(scRow); body.appendChild(scWrap);
+
+  // Récurrence
+  const recWrap = el("div", { class:"form-field" });
+  recWrap.appendChild(el("label", {}, "Récurrence après archivage"));
+  const recSel = el("select", { id:"f-rec" });
+  [["","Aucune"],["semaine","Chaque semaine"],["mois","Chaque mois"],["trimestre","Chaque trimestre"]]
+    .forEach(([v, l]) => {
+      const o = el("option", { value:v }, l);
+      if ((t.recurrence && t.recurrence.freq) === v || (!t.recurrence && v === "")) o.selected = true;
+      recSel.appendChild(o);
+    });
+  recSel.addEventListener("change", () => {
+    t.recurrence = recSel.value ? { freq:recSel.value, count:(t.recurrence||{}).count||0 } : null;
+    touch(t); save(); queueSync();
+  });
+  recWrap.appendChild(recSel); body.appendChild(recWrap);
+
+  // Liens vers d'autres tâches
+  const lkWrap = el("div", { class:"form-field" });
+  lkWrap.appendChild(el("label", {}, "Lié à d'autres tâches"));
+  const lkList = el("ul", { class:"link-list" });
+  renderLinks(t, lkList);
+  lkWrap.appendChild(lkList);
+  const lkAdd = el("select", { class:"link-add-sel", "aria-label":"Ajouter un lien" });
+  lkAdd.appendChild(el("option", { value:"" }, "Relier à…"));
+  actives().filter(x => x.id !== t.id && !(t.linkedTo||[]).includes(x.id)).forEach(x => {
+    lkAdd.appendChild(el("option", { value:x.id }, x.sujet || x.id));
+  });
+  lkAdd.addEventListener("change", () => {
+    if (!lkAdd.value) return;
+    t.linkedTo = [...new Set([...(t.linkedTo||[]), lkAdd.value])];
+    touch(t); save(); queueSync(); renderLinks(t, lkList);
+    lkAdd.querySelector("option[value='']").selected = true;
+    lkAdd.querySelector(`option[value="${lkAdd.value}"]`)?.remove();
+  });
+  lkWrap.appendChild(lkAdd); body.appendChild(lkWrap);
+
+  // Fil de commentaires
+  const cmWrap = el("div", { class:"form-field" });
+  cmWrap.appendChild(el("label", {}, "Journal de bord"));
+  const cmFil = el("div", { class:"comment-fil" });
+  renderComments(t, cmFil);
+  cmWrap.appendChild(cmFil);
+  const cmAdd = el("div", { class:"comment-add" });
+  const cmIn = el("textarea", { placeholder:"Ajouter une note horodatée…", rows:"2" });
+  const cmBtn = el("button", { class:"primary-btn", style:"align-self:flex-end" }, "Ajouter");
+  cmBtn.addEventListener("click", () => {
+    const v = cmIn.value.trim(); if (!v) return;
+    const now = new Date().toISOString();
+    const cmt = { id:uid(), texte:v, at:now, updatedAt:now };
+    t.comments = [...(t.comments||[]), cmt];
+    touch(t); save(); queueSync();
+    cmIn.value = ""; renderComments(t, cmFil);
+  });
+  cmIn.addEventListener("keydown", e => {
+    if ((e.ctrlKey||e.metaKey) && e.key==="Enter") { e.preventDefault(); cmBtn.click(); }
+  });
+  cmAdd.append(cmIn, cmBtn); cmWrap.append(cmAdd); body.appendChild(cmWrap);
+}
+
+function renderLinks(t, ul) {
+  ul.innerHTML = "";
+  (t.linkedTo||[]).forEach(id => {
+    const linked = data.tasks.find(x => x.id === id);
+    if (!linked) return;
+    const li = el("li", { class:"link-item" });
+    li.appendChild(el("span", {}, linked.sujet || id));
+    const rm = el("button", { class:"note-x", title:"Retirer le lien" }, "✕");
+    rm.addEventListener("click", () => {
+      t.linkedTo = (t.linkedTo||[]).filter(x => x !== id);
+      touch(t); save(); queueSync(); renderLinks(t, ul);
+    });
+    li.appendChild(rm); ul.appendChild(li);
+  });
+  if (!(t.linkedTo||[]).length) {
+    ul.appendChild(el("li", { class:"cfg-note" }, "Aucun lien."));
+  }
+}
+
+function renderComments(t, fil) {
+  fil.innerHTML = "";
+  const list = (t.comments||[]).filter(c => !c.deleted)
+    .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  list.forEach(c => {
+    const div = el("div", { class:"comment" });
+    div.appendChild(el("span", { class:"comment-when" }, frDate(c.at.slice(0,10)) + " " + c.at.slice(11,16)));
+    div.appendChild(el("p", { class:"comment-text" }, c.texte));
+    const rm = el("button", { class:"note-x", title:"Supprimer" }, "✕");
+    rm.addEventListener("click", () => {
+      c.deleted = true; touch(t); save(); queueSync(); renderComments(t, fil);
+    });
+    div.appendChild(rm); fil.appendChild(div);
+  });
+  if (!list.length) fil.appendChild(el("p", { class:"cfg-note" }, "Aucune note pour l'instant."));
+}
+
+function refreshTagSelects() {
+  const allTags = [...new Set(live().flatMap(t => t.tags||[]))].sort();
+  ["f-tag","f-tag-arch"].forEach(id => {
+    const sel = $("#"+id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = "";
+    sel.appendChild(el("option", { value:"" }, "Tous les tags"));
+    allTags.forEach(tg => {
+      const o = el("option", { value:tg }, tg);
+      if (tg === cur) o.selected = true;
+      sel.appendChild(o);
+    });
+  });
+}
+
+
+
+/* ============================================================
+   Vue Kanban — colonnes par statut
+   ============================================================ */
+function renderKanban() {
+  const board = $("#kanban-board");
+  if (!board) return;
+  board.innerHTML = "";
+  const list = filteredActives();
+  const cols = [
+    { key:"en-cours",   label:"En cours" },
+    { key:"en-attente", label:"En attente" },
+    { key:"bloquee",    label:"Bloquée" },
+    { key:"deleguee",   label:"Déléguée" }
+  ];
+  cols.forEach(col => {
+    const items = list.filter(t => (t.statut || "en-cours") === col.key);
+    const colEl = el("div", { class:"kb-col", "data-st":col.key });
+    const hd = el("div", { class:"kb-head" });
+    hd.appendChild(el("span", { class:"kb-title" }, col.label));
+    hd.appendChild(el("span", { class:"kb-n" }, items.length));
+    colEl.appendChild(hd);
+    const drop = el("div", { class:"kb-drop" });
+    items.forEach(t => {
+      const card = el("article", { class:"kb-card", "data-id":t.id,
+        draggable:"true", tabindex:"0" });
+      card.appendChild(el("p", { class:"kb-sujet" }, t.sujet || "—"));
+      if (t.collaboration) card.appendChild(el("span", { class:"chip chip-collab" }, t.collaboration));
+      if (t.echeance) {
+        const d = daysUntil(t.echeance);
+        const cls = d < 0 ? "chip-late" : d === 0 ? "chip-today" : "chip-date";
+        card.appendChild(el("span", { class:"chip " + cls }, frDate(t.echeance)));
+      }
+      if ((t.tags||[]).length) {
+        const tr = el("div", { class:"tag-row" });
+        t.tags.forEach(tg => tr.appendChild(el("span", { class:"tag-chip" }, tg)));
+        card.appendChild(tr);
+      }
+      if (t.score) card.appendChild(el("span", { class:"kb-score" }, "★".repeat(t.score)));
+      // drag
+      card.addEventListener("dragstart", e => {
+        e.dataTransfer.setData("text/plain", t.id);
+        card.classList.add("is-dragging");
+      });
+      card.addEventListener("dragend", () => card.classList.remove("is-dragging"));
+      card.addEventListener("click", () => openSheet(t.id));
+      drop.appendChild(card);
+    });
+    // drop target
+    drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("kb-over"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("kb-over"));
+    drop.addEventListener("drop", e => {
+      e.preventDefault(); drop.classList.remove("kb-over");
+      const id = e.dataTransfer.getData("text/plain");
+      const task = data.tasks.find(x => x.id === id);
+      if (task && task.statut !== col.key) {
+        task.statut = col.key; touch(task); save(); queueSync();
+        renderKanban(); renderTable();
+      }
+    });
+    colEl.appendChild(drop);
+    board.appendChild(colEl);
+  });
+}
+
+
+/* ============================================================
+   Partage en lecture seule
+   ============================================================ */
+const SHARE_KEY = "pic-share-token";
+
+function openSharePanel() {
+  const existing = data.sync.shareToken;
+  const pnl = $("#share-panel");
+  if (!pnl) return;
+  pnl.innerHTML = "";
+  if (existing) {
+    const url = location.origin + "/?share=" + existing;
+    pnl.appendChild(el("p", { class:"cfg-note" },
+      "Partagez ce lien en lecture seule. Tous ceux qui l'ont peuvent voir vos tâches en cours, sans pouvoir les modifier."));
+    const row = el("div", { class:"sound-pick" });
+    const inp = el("input", { type:"text", value:url, readonly:"true" });
+    const cp = el("button", { class:"ghost-btn" }, "Copier");
+    cp.addEventListener("click", () => {
+      navigator.clipboard.writeText(url).catch(() => {});
+      cp.textContent = "Copié"; setTimeout(() => cp.textContent = "Copier", 1400);
+    });
+    row.append(inp, cp); pnl.appendChild(row);
+    const rm = el("button", { class:"danger-btn", style:"margin-top:10px" }, "Révoquer le lien");
+    rm.addEventListener("click", () => {
+      data.sync.shareToken = null; save(); queueSync(); openSharePanel();
+      toast("Lien révoqué. L'ancienne URL ne fonctionne plus.", "ok");
+    });
+    pnl.appendChild(rm);
+  } else {
+    pnl.appendChild(el("p", { class:"cfg-note" },
+      "Créez un lien public en lecture seule pour permettre à un collègue de suivre vos tâches sans accéder aux réglages."));
+    const btn = el("button", { class:"primary-btn" }, "Créer un lien de partage");
+    btn.addEventListener("click", async () => {
+      const token = uid() + uid();
+      data.sync.shareToken = token;
+      save(); queueSync();
+      if (data.sync.enabled) {
+        try {
+          await fetch("/api/sync", {
+            method:"POST", headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify({ space:data.sync.space, tasks:data.tasks,
+              meta:{ columns:data.columns, settings:{}, updatedAt:data.metaUpdatedAt },
+              shareToken:token })
+          });
+        } catch(e) { /* hors ligne */ }
+      }
+      openSharePanel();
+    });
+    pnl.appendChild(btn);
+  }
+}
+
+/* Lecture seule : on vérifie si on est en mode partage */
+function checkShareMode() {
+  const url = new URL(location.href);
+  const token = url.searchParams.get("share");
+  if (!token) return false;
+  document.body.classList.add("is-share");
+  document.title = "PIC — Vue partagée";
+  loadSharedView(token);
+  return true;
+}
+
+async function loadSharedView(token) {
+  const msg = el("div", { class:"share-loading" }, "Chargement de la vue partagée…");
+  document.body.innerHTML = ""; document.body.appendChild(msg);
+  try {
+    const r = await fetch("/api/share/" + token);
+    if (!r.ok) throw new Error("Lien invalide ou expiré.");
+    const d = await r.json();
+    renderReadOnly(d.tasks || [], d.columns || []);
+  } catch(e) {
+    msg.textContent = "Lien invalide ou expiré. Demandez un nouveau lien au propriétaire.";
+  }
+}
+
+function renderReadOnly(tasks, cols) {
+  document.body.innerHTML = `
+    <div class="app-head">
+      <div class="head-left">
+        <div class="logo-square"><span>PIC</span></div>
+        <div class="head-titles">
+          <h1>Programme d'Interaction Collaboratif</h1>
+          <p class="head-sub" style="color:var(--o-yellow)">Vue en lecture seule</p>
+        </div>
+      </div>
+      <div class="head-right"><div class="majin-block">by Majin</div></div>
+    </div>
+    <main class="app-main" id="share-main"></main>`;
+  const main = document.getElementById("share-main");
+  const actives = tasks.filter(t => !t.deleted && !t.archived);
+  if (!actives.length) { main.innerHTML = "<p style='padding:40px;color:var(--o-grey-2)'>Aucune tâche en cours à afficher.</p>"; return; }
+  const wrap = el("div", { class:"table-scroll", style:"border:2px solid var(--o-black)" });
+  const table = el("table", { class:"pic-table" });
+  const thead = el("thead"); const tr = el("tr");
+  tr.appendChild(el("th", {}, "Statut"));
+  (cols.length ? cols : []).filter(c => c.visible).forEach(c => tr.appendChild(el("th",{},c.label)));
+  thead.appendChild(tr); table.appendChild(thead);
+  const tbody = el("tbody");
+  actives.forEach(t => {
+    const row = el("tr");
+    const st = STATUTS[t.statut||"en-cours"]||STATUTS["en-cours"];
+    const td0 = el("td", {}); td0.appendChild(el("span",{class:"chip",style:`background:${st.color};color:#fff`},st.label));
+    row.appendChild(td0);
+    (cols.length ? cols : []).filter(c => c.visible).forEach(c => {
+      const v = c.type==="date" ? frDate(t[c.key]) : (t[c.key]||"—");
+      row.appendChild(el("td",{},v));
+    });
+    tbody.appendChild(row);
+  });
+  table.appendChild(tbody); wrap.appendChild(table); main.appendChild(wrap);
 }
 
 /* ============================================================
@@ -1389,7 +1882,10 @@ function setView(v) {
   window.scrollTo({ top:0, behavior:"smooth" });
 }
 
-function renderAll() { renderTable(); renderNotes(); renderArchives(); renderBoard(); }
+function renderAll() {
+  if (data.settings.kanban) renderKanban(); else renderTable();
+  renderNotes(); renderArchives(); renderBoard();
+}
 
 function wire() {
   $$(".tab").forEach(t => t.addEventListener("click", () => setView(t.dataset.view)));
@@ -1411,6 +1907,16 @@ function wire() {
   });
   $("#f-collab").addEventListener("change", e => { filters.collab = e.target.value; renderTable(); });
   $("#f-echeance").addEventListener("change", e => { filters.ech = e.target.value; renderTable(); });
+  $("#f-tag").addEventListener("change", e => { filters.tag = e.target.value; renderTable(); });
+  $("#f-statut").addEventListener("change", e => { filters.statut = e.target.value; renderTable(); });
+  $("#f-tag-arch").addEventListener("change", e => { filters.tagArch = e.target.value; renderArchives(); });
+  /* Kanban */
+  $("#btn-kanban").addEventListener("click", () => {
+    data.settings.kanban = !data.settings.kanban; save();
+    document.body.classList.toggle("is-kanban", data.settings.kanban);
+    $("#btn-kanban").textContent = data.settings.kanban ? "Tableau" : "Kanban";
+    if (data.settings.kanban) renderKanban(); else renderTable();
+  });
   $("#q-arch").addEventListener("input", e => { filters.qArch = e.target.value; renderArchives(); });
   $("#f-collab-arch").addEventListener("change", e => { filters.collabArch = e.target.value; renderArchives(); });
 
@@ -1483,6 +1989,8 @@ function wire() {
   $("#cfg-dense").addEventListener("change", e => {
     data.settings.dense = e.target.checked; save();
     document.body.classList.toggle("is-dense", data.settings.dense);
+  document.body.classList.toggle("is-kanban", !!data.settings.kanban);
+  if (data.settings.kanban && $("#btn-kanban")) $("#btn-kanban").textContent = "Tableau";
   });
   $("#cfg-notif-ask").addEventListener("click", () => {
     if (!("Notification" in window)) return;
@@ -1543,10 +2051,14 @@ function wire() {
 
   /* Synthèse REX */
   $("#btn-synth").addEventListener("click", openSynth);
+  $("#btn-print-bord").addEventListener("click", () => doPrint("bord"));
   $("#synth-close").addEventListener("click", closeSynth);
   $("#synth-print").addEventListener("click", () => doPrint("synthese"));
   $("#synth-range").addEventListener("change", e => { synthRange = e.target.value; renderSynth(); });
   $("#synth-backdrop").addEventListener("click", e => { if (e.target.id === "synth-backdrop") closeSynth(); });
+
+  /* Partage lecture seule */
+  $("#btn-share-open").addEventListener("click", openSharePanel);
 
   /* Ouverture animée */
   $("#cfg-intro").addEventListener("change", e => { data.settings.intro = e.target.checked; save(); });
@@ -1605,10 +2117,14 @@ window.addEventListener("beforeinstallprompt", e => {
 
 /* ---------- Démarrage ---------- */
 function boot() {
+  if (checkShareMode()) return;
   if (migrated) save();
   purgeTombstones();
+  migrateTasks();
   pruneEmptyTasks();
   document.body.classList.toggle("is-dense", data.settings.dense);
+  document.body.classList.toggle("is-kanban", !!data.settings.kanban);
+  if (data.settings.kanban && $("#btn-kanban")) $("#btn-kanban").textContent = "Tableau";
   wire();
   renderAll();
   setSyncState(data.sync.enabled ? "pending" : "off");
