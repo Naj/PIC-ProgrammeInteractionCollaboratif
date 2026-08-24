@@ -37,6 +37,7 @@ export async function onRequest(context) {
     if (path === "push/subscribe"   && request.method === "POST") return await subscribe(request, env);
     if (path === "push/unsubscribe" && request.method === "POST") return await unsubscribe(request, env);
     if (path === "rappels"          && request.method === "GET")  return await rappels(url, env);
+    if (path.startsWith("share/")   && request.method === "GET")  return await getShare(path.slice(6), env);
 
     return json({ error: "Route inconnue." }, 404);
   } catch (e) {
@@ -93,6 +94,17 @@ async function sync(request, env) {
     );
   }
 
+  /* Token de partage en lecture seule */
+  if (typeof body.shareToken === "string" && /^[a-z0-9]{6,64}$/.test(body.shareToken)) {
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO shares (token, space, created_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(token) DO UPDATE SET space = excluded.space`
+      ).bind(body.shareToken, space, now)
+    );
+  }
+
   if (stmts.length) await env.DB.batch(stmts);
 
   const rows = await env.DB.prepare(
@@ -142,6 +154,42 @@ async function unsubscribe(request, env) {
   if (!body || !body.endpoint) return json({ error: "Endpoint manquant." }, 400);
   await env.DB.prepare(`DELETE FROM subs WHERE endpoint = ?1`).bind(body.endpoint).run();
   return json({ ok: true });
+}
+
+/* ---------- Vue partagée en lecture seule ---------- */
+async function getShare(token, env) {
+  if (!/^[a-z0-9]{6,64}$/.test(token)) return json({ error: "Lien invalide." }, 400);
+
+  const row = await env.DB.prepare(
+    `SELECT space, expires_at FROM shares WHERE token = ?1`
+  ).bind(token).first();
+
+  if (!row) return json({ error: "Lien inconnu ou révoqué." }, 404);
+  if (row.expires_at && row.expires_at < new Date().toISOString()) {
+    return json({ error: "Lien expiré." }, 410);
+  }
+
+  /* Uniquement les tâches en cours, jamais les archives ni les notes */
+  const rows = await env.DB.prepare(
+    `SELECT payload FROM tasks
+      WHERE space = ?1 AND deleted = 0 AND archived = 0
+      ORDER BY echeance ASC LIMIT 500`
+  ).bind(row.space).all();
+
+  const meta = await env.DB.prepare(
+    `SELECT columns FROM meta WHERE space = ?1`
+  ).bind(row.space).first();
+
+  const tasks = (rows.results || [])
+    .map(r => safeParse(r.payload))
+    .filter(t => t && t.kind !== "note")
+    .map(t => ({                       // on ne renvoie que le strict nécessaire
+      id:t.id, date:t.date, sujet:t.sujet, collaboration:t.collaboration,
+      objectif:t.objectif, echeance:t.echeance, action:t.action,
+      commentaire:t.commentaire, statut:t.statut, tags:t.tags, archived:false
+    }));
+
+  return json({ tasks, columns: safeParse(meta && meta.columns) || [] });
 }
 
 /* ---------- Ce que le service worker affiche ---------- */
