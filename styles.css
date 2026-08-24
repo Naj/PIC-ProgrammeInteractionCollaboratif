@@ -98,10 +98,55 @@ kbd{
 .logo-square{
   width:46px;height:46px;background:var(--o-orange);
   display:grid;place-items:center;flex:0 0 auto;
+  position:relative;overflow:hidden;cursor:pointer;
   animation:logoIn .6s cubic-bezier(.2,1.4,.4,1) 1.7s both;
+  transition:transform .18s cubic-bezier(.2,1.4,.4,1);
+  border:0;
 }
-.logo-square span{
+.logo-square:hover{transform:scale(1.10)}
+.logo-square:active{transform:scale(.93)}
+
+/* Texte PIC */
+.logo-square > span:first-child{
   font-weight:700;font-size:15px;letter-spacing:.04em;color:var(--o-white);
+  position:relative;z-index:2;
+  animation:logoTxtPulse 4s ease-in-out 2.5s infinite;
+}
+@keyframes logoTxtPulse{
+  0%,100%{transform:scale(1);opacity:1}
+  45%{transform:scale(1.18);opacity:.85}
+  50%{transform:scale(1.22);opacity:1}
+  55%{transform:scale(1.18);opacity:.85}
+}
+
+/* Deux micro-carrés qui tournent en fond */
+.logo-sq-a,.logo-sq-b{
+  position:absolute;width:10px;height:10px;background:rgba(255,255,255,.22);
+  animation:sqOrbit 5s linear 2.5s infinite;
+}
+.logo-sq-a{
+  top:5px;left:5px;transform-origin:28px 28px;
+}
+.logo-sq-b{
+  bottom:5px;right:5px;transform-origin:-18px -18px;
+  animation-delay:4.75s;
+}
+@keyframes sqOrbit{
+  from{transform:rotate(0)}
+  to{transform:rotate(360deg)}
+}
+
+/* Flash orange clair au clic */
+.logo-square::after{
+  content:"";position:absolute;inset:0;
+  background:rgba(255,255,255,.35);
+  transform:scale(0);border-radius:50%;opacity:0;
+  transition:transform .0s,opacity .0s;
+  pointer-events:none;
+}
+.logo-square.is-clicked::after{
+  transform:scale(2.5);opacity:0;
+  transition:transform .42s cubic-bezier(.2,.8,.3,1),opacity .42s ease;
 }
 .head-titles{min-width:0}
 .app-head h1{
@@ -523,8 +568,9 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--o-orange);flex:0 
 @media(max-width:720px){
   .pic-table{min-width:0;table-layout:auto}
   .app-head{padding:8px 14px}
-  .logo-square{width:38px;height:38px}
-  .logo-square span{font-size:12px}
+  .logo-square{width:38px;height:38px;}
+  .logo-square > span:first-child{font-size:12px}
+  /* logo-square > span :first-child géré au-dessus */
   .majin-block{font-size:11px;padding:4px 9px}
   .head-sub{display:none}
   .tabs{top:56px}

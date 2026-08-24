@@ -1491,6 +1491,18 @@ function wire() {
       if (Notification.permission === "granted") toast("Rappels système activés.", "ok");
     });
   });
+  /* Logo → retour aux tâches */
+  const logoBtn = $("#logo-btn");
+  if (logoBtn) {
+    logoBtn.addEventListener("click", () => {
+      logoBtn.classList.remove("is-clicked");
+      void logoBtn.offsetWidth;            // force reflow pour relancer l'animation
+      logoBtn.classList.add("is-clicked");
+      setTimeout(() => logoBtn.classList.remove("is-clicked"), 450);
+      setView("taches");
+    });
+  }
+
   /* Notes en attente */
   $("#note-add").addEventListener("click", () => {
     if (addNote($("#note-input").value)) $("#note-input").value = "";
