@@ -24,13 +24,16 @@ const COL_WIDTH = { date:7, sujet:12, collaboration:10, objectif:10,
                     echeance:9, action:15, commentaire:17, rex:15 };
 
 const DEFAULT_SETTINGS = {
-  reminders:true, lead:1, sound:true, dense:false, intro:true,
+  reminders:true, lead:1, sound:true, dense:false, intro:true, introSon:true,
   sortKey:"echeance", sortDir:"asc"
 };
 
 const DEFAULT_SYNC = { enabled:false, space:"", lastAt:null, pushEndpoint:null };
 const API = "/api";
 const TOMBSTONE_DAYS = 120;
+
+/* Déclaré avant le chargement : migrateSettings() s'exécute pendant load(). */
+let migrated = false;
 
 /* ---------- Utilitaires ---------- */
 const $  = (s, r) => (r || document).querySelector(s);
@@ -77,10 +80,20 @@ function load() {
       return found ? { ...def, label: found.label || def.label, visible: found.visible !== false } : { ...def };
     }),
     tasks: Array.isArray(d.tasks) ? d.tasks : [],
-    settings: { ...DEFAULT_SETTINGS, ...(d.settings || {}) },
+    settings: migrateSettings({ ...DEFAULT_SETTINGS, ...(d.settings || {}) }),
     sync: { ...DEFAULT_SYNC, ...(d.sync || {}) },
     metaUpdatedAt: d.metaUpdatedAt || new Date(0).toISOString()
   };
+}
+
+/* Ancien réglage « ambiance sonore » : seul le marimba subsiste. */
+function migrateSettings(s) {
+  if (typeof s.introSound === "string") {
+    s.introSon = s.introSound !== "aucun";
+    delete s.introSound;
+    migrated = true;
+  }
+  return s;
 }
 
 /* Les suppressions laissent une trace le temps que les autres appareils
@@ -847,6 +860,7 @@ function openCfg() {
   renderSyncBlock();
   updatePushState();
   $("#cfg-intro").checked = data.settings.intro !== false;
+  $("#cfg-introson").checked = data.settings.introSon !== false;
   $("#cfg-reminders").checked = data.settings.reminders;
   $("#cfg-lead").value = String(data.settings.lead);
   $("#cfg-sound").checked = data.settings.sound;
@@ -1524,9 +1538,12 @@ function wire() {
 
   /* Ouverture animée */
   $("#cfg-intro").addEventListener("change", e => { data.settings.intro = e.target.checked; save(); });
+  $("#cfg-introson").addEventListener("change", e => {
+    data.settings.introSon = e.target.checked; save();
+  });
   $("#btn-intro-replay").addEventListener("click", () => {
     closeCfg();
-    setTimeout(() => window.PICIntro && window.PICIntro.play({ sound: data.settings.sound }), 250);
+    setTimeout(() => window.PICIntro && window.PICIntro.play({ sound: data.settings.introSon !== false }), 250);
   });
 
   $("#cfg-export").addEventListener("click", exportJSON);
@@ -1576,6 +1593,7 @@ window.addEventListener("beforeinstallprompt", e => {
 
 /* ---------- Démarrage ---------- */
 function boot() {
+  if (migrated) save();
   purgeTombstones();
   pruneEmptyTasks();
   document.body.classList.toggle("is-dense", data.settings.dense);
@@ -1588,7 +1606,7 @@ function boot() {
   }
 
   const started = (data.settings.intro !== false && window.PICIntro)
-    ? window.PICIntro.play({ sound: data.settings.sound })
+    ? window.PICIntro.play({ sound: data.settings.introSon !== false })
     : Promise.resolve();
 
   started.then(() => {
