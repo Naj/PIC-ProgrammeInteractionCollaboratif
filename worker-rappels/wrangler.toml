@@ -1,0 +1,20 @@
+name = "pic-rappels"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Rappel quotidien à 06:00 UTC — 08:00 en heure d'été française, 07:00 en hiver.
+[triggers]
+crons = ["0 6 * * *"]
+
+# Même base D1 que l'application : remplacez database_id par celui affiché
+# à la création de la base (npx wrangler d1 create pic).
+[[d1_databases]]
+binding = "DB"
+database_name = "pic"
+database_id = "REMPLACER_PAR_VOTRE_DATABASE_ID"
+
+# Secrets à définir avec « npx wrangler secret put <NOM> » :
+#   VAPID_PUBLIC   clé publique base64url
+#   VAPID_JWK      clé privée au format JWK (JSON sur une ligne)
+#   VAPID_SUBJECT  mailto:votre@adresse
+#   CRON_TEST_KEY  chaîne au choix, pour déclencher /run manuellement

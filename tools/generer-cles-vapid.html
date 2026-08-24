@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PIC — Générer les clés de notification</title>
+<style>
+  *{box-sizing:border-box}
+  body{
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    background:#F1F1F1;color:#000;margin:0;padding:28px 18px;line-height:1.5;
+  }
+  main{max-width:760px;margin:0 auto}
+  header{background:#000;color:#fff;display:flex;align-items:center;gap:14px;padding:12px 16px}
+  .sq{width:40px;height:40px;background:#FF7900;display:grid;place-items:center;font-weight:700;font-size:13px}
+  h1{margin:0;font-size:16px;text-transform:uppercase;letter-spacing:.03em}
+  .card{background:#fff;border:2px solid #000;padding:20px;margin-top:14px}
+  p{margin:0 0 12px}
+  .note{color:#595959;font-size:13px}
+  button{
+    background:#FF7900;color:#fff;border:2px solid #FF7900;font-weight:700;
+    padding:11px 20px;font-size:14px;cursor:pointer;
+  }
+  button:hover{background:#000;border-color:#000}
+  .field{margin-top:18px}
+  label{
+    display:block;font-size:10px;text-transform:uppercase;letter-spacing:.11em;
+    font-weight:700;color:#595959;margin-bottom:4px;
+  }
+  .row{display:flex;gap:8px}
+  input{
+    flex:1;min-width:0;border:2px solid #D6D6D6;padding:9px 11px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:#fff;
+  }
+  .copy{
+    background:#fff;color:#000;border:2px solid #000;padding:0 14px;
+    font-size:12px;white-space:nowrap;
+  }
+  .copy:hover{background:#000;color:#fff}
+  .warn{border-left:6px solid #FFD200;background:#FFF6B6;padding:12px 14px;font-size:13px;margin-top:18px}
+  ol{padding-left:20px}
+  li{margin-bottom:6px}
+  code{background:#FFF6B6;padding:1px 5px}
+  #out[hidden]{display:none}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="sq">PIC</div>
+    <h1>Générer les clés de notification</h1>
+  </header>
+
+  <div class="card">
+    <p>Cette page fabrique la paire de clés VAPID nécessaire aux rappels du matin.
+       Tout se passe dans votre navigateur : <strong>rien n'est envoyé nulle part</strong>,
+       et aucune connexion réseau n'est utilisée.</p>
+    <p class="note">Elle fonctionne par simple double-clic sur le fichier, sans serveur ni installation.</p>
+    <button id="go">Générer une paire de clés</button>
+
+    <div id="out" hidden>
+      <div class="field">
+        <label>VAPID_PUBLIC — clé publique</label>
+        <div class="row"><input id="pub" readonly><button class="copy" data-for="pub">Copier</button></div>
+        <p class="note">À renseigner deux fois : en variable d'environnement du projet Pages,
+           et en secret du worker de rappels.</p>
+      </div>
+      <div class="field">
+        <label>VAPID_JWK — clé privée</label>
+        <div class="row"><input id="jwk" readonly><button class="copy" data-for="jwk">Copier</button></div>
+        <p class="note">Secret du worker uniquement. Ne la publiez jamais dans le dépôt GitHub.</p>
+      </div>
+      <div class="field">
+        <label>VAPID_SUBJECT</label>
+        <div class="row"><input id="sub" value="mailto:votre@adresse"><button class="copy" data-for="sub">Copier</button></div>
+        <p class="note">Votre adresse de contact, exigée par les services de notification.</p>
+      </div>
+
+      <div class="warn">
+        <strong>Conservez ces deux clés maintenant.</strong> Cette page ne les enregistre pas :
+        fermez-la et elles sont perdues. Une nouvelle paire invaliderait tous les abonnements
+        déjà enregistrés, qu'il faudrait réactiver appareil par appareil.
+      </div>
+
+      <div class="field">
+        <label>Ensuite</label>
+        <ol>
+          <li>Tableau de bord Cloudflare → votre worker <code>pic-rappels</code> →
+              <em>Settings</em> → <em>Variables and Secrets</em>.</li>
+          <li>Ajoutez les trois valeurs ci-dessus, chacune en type <em>Secret</em>.</li>
+          <li>Ajoutez aussi <code>CRON_TEST_KEY</code>, une chaîne au choix, pour pouvoir
+              déclencher un rappel à la demande.</li>
+          <li>Dans le projet Pages → <em>Settings</em> → variables d'environnement :
+              ajoutez <code>VAPID_PUBLIC</code> avec la même valeur.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const b64url = bytes => {
+  let s = "";
+  const a = new Uint8Array(bytes);
+  for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+
+document.getElementById("go").addEventListener("click", async () => {
+  try {
+    const pair = await crypto.subtle.generateKey(
+      { name:"ECDSA", namedCurve:"P-256" }, true, ["sign", "verify"]
+    );
+    const priv = await crypto.subtle.exportKey("jwk", pair.privateKey);
+    const raw  = await crypto.subtle.exportKey("raw", pair.publicKey);
+
+    document.getElementById("pub").value = b64url(raw);
+    document.getElementById("jwk").value = JSON.stringify({ d:priv.d, x:priv.x, y:priv.y });
+    document.getElementById("out").hidden = false;
+    document.getElementById("go").textContent = "Générer une autre paire";
+  } catch (e) {
+    alert("Génération impossible dans ce navigateur : " + (e.message || e));
+  }
+});
+
+document.addEventListener("click", async e => {
+  const b = e.target.closest(".copy");
+  if (!b) return;
+  const input = document.getElementById(b.dataset.for);
+  input.select();
+  try { await navigator.clipboard.writeText(input.value); }
+  catch (err) { document.execCommand("copy"); }
+  const old = b.textContent;
+  b.textContent = "Copié";
+  setTimeout(() => { b.textContent = old; }, 1400);
+});
+</script>
+</body>
+</html>
