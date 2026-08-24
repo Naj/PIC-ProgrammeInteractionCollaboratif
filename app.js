@@ -753,51 +753,54 @@ function renderBoard() {
     requestAnimationFrame(() => { fill.style.width = (s.n / sMax) * 100 + "%"; });
   });
 
-  /* Courbe de charge par collaboration sur 8 semaines */
-  const chargeEl = $("#chart-charge");
-  if (chargeEl) {
-    chargeEl.innerHTML = "";
-    const collab8 = {};
-    const wks = [];
-    for (let i = 0; i < 8; i++) {
-      const d = new Date(Date.now() + i * 7 * 864e5);
-      const wk = d.toISOString().slice(0, 10);
-      wks.push(wk);
+  /* Top des collaborations — cumul de toutes les tâches, en cours et archivées.
+     Ce sont les personnes qui aident le plus sur les tâches. */
+  const topEl = $("#chart-top");
+  if (topEl) {
+    topEl.innerHTML = "";
+    const tally = {};
+    live().forEach(t => {
+      const name = (t.collaboration || "").trim();
+      if (!name) return;
+      tally[name] = tally[name] || { total:0, ouvertes:0, closes:0, notes:[] };
+      tally[name].total++;
+      t.archived ? tally[name].closes++ : tally[name].ouvertes++;
+      if (t.score) tally[name].notes.push(t.score);
+    });
+
+    const rank = Object.entries(tally).sort((a, b) => b[1].total - a[1].total);
+    if (!rank.length) {
+      topEl.appendChild(el("p", { class:"cfg-note" },
+        "Le classement apparaîtra dès qu'une tâche portera une collaboration."));
+    } else {
+      const maxT = rank[0][1].total;
+      const podium = ["\u2460", "\u2461", "\u2462"];
+      rank.forEach(([name, v], i) => {
+        const row = el("div", { class:"top-row" + (i < 3 ? " is-podium" : "") });
+        row.appendChild(el("span", { class:"top-rank" }, i < 3 ? podium[i] : String(i + 1)));
+        const mid = el("div", { class:"top-mid" });
+        const hd = el("div", { class:"top-hd" });
+        hd.appendChild(el("span", { class:"top-name" }, name));
+        const dif = v.notes.length
+          ? " · difficulté " + (v.notes.reduce((s, n) => s + n, 0) / v.notes.length).toFixed(1) + "/5"
+          : "";
+        hd.appendChild(el("span", { class:"top-meta" },
+          `${v.total} tâche${v.total > 1 ? "s" : ""} · ${v.ouvertes} en cours · ${v.closes} archivée${v.closes > 1 ? "s" : ""}${dif}`));
+        mid.appendChild(hd);
+        const track = el("div", { class:"top-track" });
+        const fOpen = el("span", { class:"top-fill f-open" });
+        const fDone = el("span", { class:"top-fill f-done" });
+        track.append(fOpen, fDone);
+        mid.appendChild(track);
+        row.appendChild(mid);
+        row.appendChild(el("span", { class:"top-total" }, String(v.total)));
+        topEl.appendChild(row);
+        requestAnimationFrame(() => {
+          fOpen.style.width = (v.ouvertes / maxT) * 100 + "%";
+          fDone.style.width = (v.closes / maxT) * 100 + "%";
+        });
+      });
     }
-    const collabs = [...new Set(actives().map(t => (t.collaboration||"").trim()).filter(Boolean))];
-    collabs.slice(0,6).forEach(c => {
-      collab8[c] = wks.map(wk => {
-        const wd = new Date(wk);
-        const we = new Date(wd.getTime() + 7*864e5);
-        return actives().filter(t => {
-          if ((t.collaboration||"").trim() !== c) return false;
-          const d = t.echeance ? new Date(t.echeance+"T00:00:00") : null;
-          return d && d >= wd && d < we;
-        }).length;
-      });
-    });
-    const maxC = Math.max(1, ...Object.values(collab8).flat());
-    const colors = ["var(--o-orange)","var(--o-blue)","var(--o-green)","var(--o-purple)","var(--o-yellow-d)","var(--o-pink-d)"];
-    const DAYS = ["S1","S2","S3","S4","S5","S6","S7","S8"];
-    const wrap = el("div", { style:"overflow-x:auto" });
-    const grid = el("div", { class:"charge-grid", style:`grid-template-columns:80px repeat(8,1fr)` });
-    grid.appendChild(el("span",{ class:"charge-lbl" },""));
-    DAYS.forEach(d => grid.appendChild(el("span",{ class:"charge-hd" }, d)));
-    collabs.slice(0,6).forEach((c, ci) => {
-      grid.appendChild(el("span",{ class:"charge-lbl", style:`color:${colors[ci%colors.length]}` }, c.slice(0,12)));
-      collab8[c].forEach(n => {
-        const cell = el("div", { class:"charge-cell" });
-        if (n > 0) {
-          const fill = el("div", { class:"charge-fill",
-            style:`height:${Math.round((n/maxC)*100)}%;background:${colors[ci%colors.length]}` });
-          cell.appendChild(fill);
-          cell.appendChild(el("span", { class:"charge-n" }, n));
-        }
-        grid.appendChild(cell);
-      });
-    });
-    wrap.appendChild(grid); chargeEl.appendChild(wrap);
-    if (!collabs.length) chargeEl.appendChild(el("p", { class:"cfg-note" }, "Les données apparaîtront avec des tâches ayant une collaboration et une échéance."));
   }
 
   /* Prochaines échéances */
@@ -995,9 +998,6 @@ function toast(msg, kind, actionLabel, action) {
 function openCfg() {
   const ul = $("#col-list");
   ul.innerHTML = "";
-  buildSheetExtra(t, body);
-  const divider = el("div",{class:"sheet-divider"},"Champs");
-  body.appendChild(divider);
   cols().forEach(c => {
     const li = el("li", { class:"col-item" });
     const chk = el("input", { type:"checkbox" });

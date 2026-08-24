@@ -1093,26 +1093,6 @@ body.is-kanban #kanban-board{display:grid!important}
 }
 
 /* ============================================================
-   Courbe de charge
-   ============================================================ */
-.panel-wide{grid-column:1 / -1}
-.charge-grid{
-  display:grid;gap:4px 6px;align-items:end;
-  padding:10px 0;min-height:120px;
-}
-.charge-hd,.charge-lbl{
-  font-size:10px;text-transform:uppercase;letter-spacing:.06em;
-  color:var(--o-grey-2);font-weight:700;white-space:nowrap;overflow:hidden;
-}
-.charge-lbl{text-align:right;padding-right:6px;align-self:center}
-.charge-cell{
-  height:80px;display:flex;flex-direction:column;align-items:center;
-  justify-content:flex-end;gap:2px;border-bottom:1px solid var(--line);
-}
-.charge-fill{width:70%;min-height:3px;transition:height .8s cubic-bezier(.2,.8,.3,1)}
-.charge-n{font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
-
-/* ============================================================
    Export PDF tableau de bord
    ============================================================ */
 @media print{
@@ -1130,3 +1110,36 @@ body.is-kanban #kanban-board{display:grid!important}
   color:var(--o-grey-2);text-transform:uppercase;letter-spacing:.08em;
 }
 body.is-share .app-head{border-bottom:4px solid var(--o-yellow)}
+
+/* ============================================================
+   Top des collaborations
+   ============================================================ */
+.top-row{
+  display:flex;align-items:center;gap:12px;padding:9px 0;
+  border-bottom:1px solid var(--line);
+}
+.top-row:last-child{border-bottom:0}
+.top-rank{
+  flex:0 0 26px;text-align:center;font-size:16px;font-weight:700;
+  color:var(--o-grey-1);font-variant-numeric:tabular-nums;
+}
+.top-row.is-podium .top-rank{color:var(--o-orange);font-size:19px}
+.top-mid{flex:1;min-width:0;display:grid;gap:4px}
+.top-hd{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.top-name{font-weight:700;font-size:14px}
+.top-meta{
+  margin-left:auto;font-size:11px;color:var(--o-grey-2);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.top-track{height:14px;background:var(--o-grey-1);display:flex}
+.top-fill{display:block;height:100%;width:0;transition:width .8s cubic-bezier(.2,.8,.3,1)}
+.top-fill.f-open{background:var(--o-orange)}
+.top-fill.f-done{background:var(--o-green)}
+.top-total{
+  flex:0 0 auto;font-size:20px;font-weight:700;
+  font-variant-numeric:tabular-nums;min-width:34px;text-align:right;
+}
+@media(max-width:720px){
+  .top-meta{margin-left:0;width:100%;white-space:normal}
+  .top-total{font-size:17px}
+}

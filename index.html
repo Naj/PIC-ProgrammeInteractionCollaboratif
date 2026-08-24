@@ -57,7 +57,7 @@
         <option value="bloquee">Bloquée</option>
         <option value="deleguee">Déléguée</option>
       </select>
-      <select id="f-tag" aria-label="Filtrer par tag"></select>
+      <select id="f-tag" aria-label="Filtrer par tag"><option value="">Tous les tags</option></select>
       <select id="f-echeance" aria-label="Filtrer par échéance">
         <option value="">Toutes échéances</option>
         <option value="late">En retard</option>
@@ -79,7 +79,7 @@
       </table>
     </div>
 
-    <div class="kanban-wrap" id="kanban-board" hidden></div>
+    <div class="kanban-wrap" id="kanban-board"></div>
     <div class="empty" id="empty-taches" hidden>
       <div class="empty-square"></div>
       <p class="empty-title">Aucune tâche ici</p>
@@ -109,7 +109,7 @@
         <input type="search" id="q-arch" placeholder="Rechercher dans les REX…" aria-label="Rechercher dans les archives">
       </div>
       <select id="f-collab-arch" aria-label="Filtrer par collaboration"><option value="">Toutes collaborations</option></select>
-      <select id="f-tag-arch" aria-label="Filtrer par tag"></select>
+      <select id="f-tag-arch" aria-label="Filtrer par tag"><option value="">Tous les tags</option></select>
       <div class="toolbar-end">
         <button class="primary-btn" id="btn-synth">Synthèse REX</button>
         <button class="ghost-btn" id="btn-print-arch">Imprimer</button>
@@ -149,8 +149,12 @@
         <div class="donut-wrap" id="chart-echeance"></div>
       </article>
       <article class="panel panel-wide">
-        <h2 class="panel-title">Charge par collaboration (8 semaines)</h2>
-        <div id="chart-charge"></div>
+        <h2 class="panel-title">Top des collaborations</h2>
+        <div id="chart-top"></div>
+        <div class="legend">
+          <span><i class="dot dot-orange"></i>En cours</span>
+          <span><i class="dot dot-green"></i>Archivées</span>
+        </div>
       </article>
       <article class="panel">
         <h2 class="panel-title">Prochaines échéances</h2>
