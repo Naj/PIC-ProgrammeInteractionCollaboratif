@@ -64,6 +64,8 @@ des fichiers statiques déposés à la racine, prêts pour Cloudflare Pages.
 
 **Ouverture animée**
 - Séquence de 10 secondes avec partition Web Audio : les neuf carrés s'assemblent, le bloc PIC apparaît, le titre s'ouvre, les trois mots se posent, le tampon *by Majin* frappe, un balayage orange livre l'application.
+- Partition **marimba** : bois chaud, gamme pentatonique montante sur les neuf carrés, roulé d'accord au final. Chaque frappe est une fondamentale sinus doublée d'une attaque brève à 3,94 fois la fréquence — c'est ce rapport inharmonique qui donne le bois.
+- Le son se coupe dans Réglages → Confort sans désactiver l'animation.
 - *Passer* à tout moment, ou `Échap`. Désactivable dans Réglages → Confort, où l'on peut aussi la revoir.
 - Les navigateurs bloquent le son tant que rien n'a été touché : un bouton *Activer le son* apparaît le cas échéant, et le premier clic suffit.
 - Animation réduite au strict minimum si le système demande de limiter les mouvements.
@@ -133,9 +135,14 @@ redéploie.
 
 ### 3. Base D1 (synchronisation)
 
+**Sans ligne de commande**, depuis le tableau de bord Cloudflare :
+*Storage & Databases* → *D1 SQL Database* → **Create** → nommez la base `pic`.
+Puis onglet **Console** de cette base : collez le contenu de `schema.sql` et exécutez.
+
+Avec Wrangler si vous l'avez :
+
 ```bash
 npx wrangler d1 create pic
-# notez le database_id affiché
 npx wrangler d1 execute pic --remote --file=./schema.sql
 ```
 
@@ -152,8 +159,17 @@ Dans l'application : **Réglages** → **Synchronisation** → saisissez un code
 
 ### 4. Rappels poussés (worker Cron)
 
+Les clés se génèrent **sans rien installer** : ouvrez `tools/generer-cles-vapid.html`
+d'un double-clic. Tout se calcule dans le navigateur, hors ligne.
+
+Le worker se crée aussi depuis le tableau de bord : *Workers & Pages* → **Create** →
+*Start with Hello World*, collez le contenu de `worker-rappels/src/index.js`, puis dans
+*Settings* ajoutez la liaison D1 `DB`, les quatre secrets, et le déclencheur Cron `0 6 * * *`.
+
+Avec Wrangler si vous l'avez :
+
 ```bash
-node tools/generate-vapid.mjs        # génère la paire de clés
+node tools/generate-vapid.mjs
 cd worker-rappels
 # renseignez database_id dans wrangler.toml
 npx wrangler secret put VAPID_PUBLIC
@@ -201,7 +217,8 @@ manifest.webmanifest          déclaration PWA
 schema.sql                    tables D1 (tasks, meta, subs)
 functions/api/[[path]].js     API de synchronisation servie par Pages Functions
 worker-rappels/               worker Cron qui envoie les rappels du matin
-tools/generate-vapid.mjs      génération des clés de notification
+tools/generer-cles-vapid.html génération des clés dans le navigateur, sans installation
+tools/generate-vapid.mjs      même chose en ligne de commande
 favicon.svg                   icône navigateur
 icon-192.png                  icône PWA
 icon-512.png                  icône PWA
