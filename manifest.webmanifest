@@ -1,7 +1,7 @@
 {
-  "name": "PIC — Programme d'Interaction Collaboratif",
-  "short_name": "PIC",
-  "description": "Organisateur de tâches collaboratives, archivage et retours d'expérience. by Majin.",
+  "name": "TAF — Travail à Faire",
+  "short_name": "TAF",
+  "description": "Travail à Faire — organisateur de tâches, archivage et retours d'expérience. by Majin.",
   "lang": "fr",
   "dir": "ltr",
   "start_url": "./",

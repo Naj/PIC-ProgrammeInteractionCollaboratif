@@ -1,4 +1,4 @@
-# PIC — Programme d'Interaction Collaboratif
+# TAF — Travail à Faire
 
 **by Majin** · Organisateur de tâches collaboratives, archivage et retours d'expérience.
 
@@ -54,7 +54,7 @@ des fichiers statiques déposés à la racine, prêts pour Cloudflare Pages.
 **Rappel du matin, application fermée**
 - Un déclencheur Cron interroge chaque matin les échéances et envoie une notification aux appareils abonnés.
 - Le message poussé est **vide** : le service worker demande le détail à l'API au moment d'afficher la notification. Rien de personnel ne transite par les serveurs de push de Google ou Apple.
-- Sur iPhone : ajoutez d'abord PIC à l'écran d'accueil, puis activez les rappels depuis l'application installée (contrainte iOS, pas de PIC).
+- Sur iPhone : ajoutez d'abord TAF à l'écran d'accueil, puis activez les rappels depuis l'application installée (contrainte iOS, pas de TAF).
 
 **Synthèse REX**
 - Bouton *Synthèse REX* dans l'onglet Archives.
@@ -63,7 +63,7 @@ des fichiers statiques déposés à la racine, prêts pour Cloudflare Pages.
 - Impression sur **une seule page**, trois colonnes, même en-tête que le reste.
 
 **Ouverture animée**
-- Séquence de 10 secondes avec partition Web Audio : les neuf carrés s'assemblent, le bloc PIC apparaît, le titre s'ouvre, les trois mots se posent, le tampon *by Majin* frappe, un balayage orange livre l'application.
+- Séquence de 10 secondes avec partition Web Audio : les neuf carrés s'assemblent, le bloc TAF apparaît, le titre s'ouvre, les trois mots se posent, le tampon *by Majin* frappe, un balayage orange livre l'application.
 - Partition **marimba** : bois chaud, gamme pentatonique montante sur les neuf carrés, roulé d'accord au final. Chaque frappe est une fondamentale sinus doublée d'une attaque brève à 3,94 fois la fréquence — c'est ce rapport inharmonique qui donne le bois.
 - Le son se coupe dans Réglages → Confort sans désactiver l'animation.
 - *Passer* à tout moment, ou `Échap`. Désactivable dans Réglages → Confort, où l'on peut aussi la revoir.
@@ -111,7 +111,7 @@ additif, il ajoute les tâches absentes sans écraser les vôtres.
 ```bash
 git init
 git add .
-git commit -m "PIC — Programme d'Interaction Collaboratif"
+git commit -m "TAF — Travail à Faire"
 git branch -M main
 git remote add origin https://github.com/<votre-compte>/pic-majin.git
 git push -u origin main
@@ -237,7 +237,7 @@ jaune `#FFD200` pour l'imminent. Angles droits, pas d'arrondi, typographie Helve
 ## Mettre à jour la version en ligne
 
 Après modification de `app.js` ou `styles.css`, incrémentez la constante `CACHE` dans `sw.js`
-(`pic-majin-v2` → `pic-majin-v3`) pour forcer les navigateurs à récupérer les nouveaux fichiers.
+(`taf-majin-v2` → `taf-majin-v3`) pour forcer les navigateurs à récupérer les nouveaux fichiers.
 
 ## Détails d'implémentation utiles à savoir
 
@@ -257,3 +257,12 @@ l'espace. C'est volontairement simple et sans compte à créer. Choisissez un co
 gardez-le dans un gestionnaire de mots de passe. Si vos données deviennent sensibles,
 l'étape suivante serait un chiffrement du contenu dans le navigateur avant envoi — le
 serveur ne stockerait alors que des blocs illisibles.
+
+
+## Renommage
+
+L'application s'appelait auparavant PIC — Programme d'Interaction Collaboratif.
+La clé de stockage locale reste `pic-majin:v1` et la liaison D1 reste `DB` :
+les renommer effacerait les données déjà présentes dans les navigateurs et
+imposerait de tout resynchroniser. Le nom interne de l'API d'ouverture animée
+(`window.PICIntro`) est également conservé.

@@ -1,5 +1,5 @@
-/* PIC — service worker · by Majin */
-const CACHE = "pic-majin-v7";
+/* TAF — service worker · by Majin */
+const CACHE = "taf-majin-v10";
 const ASSETS = [
   "./", "./index.html", "./styles.css", "./app.js",
   "./intro.js", "./manifest.webmanifest", "./favicon.svg",
@@ -65,7 +65,7 @@ async function readSpace() {
 
 self.addEventListener("push", event => {
   event.waitUntil((async () => {
-    let body = "Des échéances approchent dans PIC.";
+    let body = "Des échéances approchent dans TAF.";
     const space = await readSpace();
 
     if (space) {
@@ -79,11 +79,11 @@ self.addEventListener("push", event => {
       } catch (e) { /* on garde le message générique */ }
     }
 
-    await self.registration.showNotification("PIC — rappel d'échéance", {
+    await self.registration.showNotification("TAF — rappel d'échéance", {
       body,
       icon: "./icon-192.png",
       badge: "./icon-192.png",
-      tag: "pic-rappel",
+      tag: "taf-rappel",
       renotify: true,
       data: { url: "./" }
     });

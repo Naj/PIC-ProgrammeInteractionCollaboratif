@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>PIC — Programme d'Interaction Collaboratif</title>
-<meta name="description" content="PIC — Programme d'Interaction Collaboratif. Organisateur de tâches collaboratives, archivage et REX. by Majin.">
+<title>TAF — Travail à Faire</title>
+<meta name="description" content="TAF — Travail à Faire. Organisateur de tâches collaboratives, archivage et REX. by Majin.">
 <meta name="theme-color" content="#FF7900">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -18,9 +18,9 @@
 <!-- ═══ En-tête ═══ -->
 <header class="app-head">
   <div class="head-left">
-    <button class="logo-square" id="logo-btn" title="Retour aux tâches" aria-label="Programme d'Interaction Collaboratif — retour aux tâches"><span>PIC</span><span class="logo-sq-a" aria-hidden="true"></span><span class="logo-sq-b" aria-hidden="true"></span></button>
+    <button class="logo-square" id="logo-btn" title="Retour aux tâches" aria-label="Travail à Faire — retour aux tâches"><span>TAF</span><span class="logo-sq-a" aria-hidden="true"></span><span class="logo-sq-b" aria-hidden="true"></span></button>
     <div class="head-titles">
-      <h1>Programme d'Interaction Collaboratif</h1>
+      <h1>Travail à Faire</h1>
       <p class="head-sub"><span id="head-count">0</span> <span id="head-sub-word">tâche en cours</span> · <span id="head-late">0</span> en retard</p>
     </div>
   </div>
@@ -133,10 +133,6 @@
     <div class="kpi-row" id="kpi-row"></div>
     <div class="board-grid">
       <article class="panel">
-        <h2 class="panel-title">Par collaboration</h2>
-        <div class="bars" id="chart-collab"></div>
-      </article>
-      <article class="panel">
         <h2 class="panel-title">Activité par mois</h2>
         <div class="months" id="chart-months"></div>
         <div class="legend">
@@ -179,8 +175,10 @@
     <footer class="sheet-foot">
       <button class="danger-btn" id="sheet-delete">Supprimer</button>
       <div class="sheet-foot-end">
+        <button class="ghost-btn" id="sheet-duplicate">Dupliquer</button>
         <button class="ghost-btn" id="sheet-restore" hidden>Réactiver</button>
-        <button class="primary-btn" id="sheet-archive">Archiver la tâche</button>
+        <button class="ghost-btn" id="sheet-archive">Archiver</button>
+        <button class="primary-btn" id="sheet-validate">Valider</button>
       </div>
     </footer>
   </aside>

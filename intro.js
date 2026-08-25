@@ -1,5 +1,5 @@
 /* ============================================================
-   PIC — Ouverture animée · by Majin
+   TAF — Ouverture animée · by Majin
    Séquence de 10 s, partition marimba jouée en Web Audio.
    Expose window.PICIntro.play({ sound }) → Promise
            window.PICIntro.renderTo(ctx)  → rendu hors ligne
@@ -77,12 +77,12 @@ function build() {
   root.className = "intro";
   root.id = "intro";
   root.setAttribute("role", "dialog");
-  root.setAttribute("aria-label", "Ouverture de PIC");
+  root.setAttribute("aria-label", "Ouverture de TAF");
 
   root.innerHTML =
     '<div class="intro-stage">' +
       '<div class="intro-grid"></div>' +
-      '<div class="intro-mark"><span class="intro-mark-sq"></span><span class="intro-mark-txt">PIC</span></div>' +
+      '<div class="intro-mark"><span class="intro-mark-sq"></span><span class="intro-mark-txt">TAF</span></div>' +
       '<h1 class="intro-title"><span>Programme d\'Interaction Collaboratif</span></h1>' +
       '<ul class="intro-words">' +
         '<li style="--d:5.20s">Suivre</li>' +

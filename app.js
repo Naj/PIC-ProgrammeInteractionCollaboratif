@@ -1,13 +1,13 @@
 /* ============================================================
-   PIC — Programme d'Interaction Collaboratif · by Majin
+   TAF — Travail à Faire · by Majin
    Stockage local, aucune dépendance externe.
    ============================================================ */
 (function () {
 "use strict";
 
 /* ---------- Constantes ---------- */
-const STORE_KEY = "pic-majin:v1";
-const APP_TITLE = "PIC - PROGRAMME D'INTERACTION COLLABORATIF";
+const STORE_KEY = "pic-majin:v1";   // inchangé : renommer la clé effacerait vos données
+const APP_TITLE = "TAF - TRAVAIL À FAIRE";
 
 const DEFAULT_COLUMNS = [
   { key:"date",          label:"Date",             type:"date", visible:true },
@@ -15,10 +15,15 @@ const DEFAULT_COLUMNS = [
   { key:"collaboration", label:"Collaboration",    type:"text", visible:true },
   { key:"objectif",      label:"Objectif",         type:"text", visible:true },
   { key:"echeance",      label:"Date d'échéance",  type:"date", visible:true },
+  { key:"statut",        label:"Statut",           type:"statut", visible:true },
   { key:"action",        label:"Action",           type:"long", visible:true },
   { key:"commentaire",   label:"Commentaire",      type:"long", visible:true },
+  { key:"score",         label:"Difficulté",       type:"score", visible:true },
   { key:"rex",           label:"REX",              type:"long", visible:true }
 ];
+
+/* Ordre d'affichage et de tri des statuts */
+const STATUT_ORDER = ["en-cours", "en-attente", "bloquee", "deleguee"];
 
 const COL_WIDTH = { date:7, sujet:12, collaboration:10, objectif:10,
                     echeance:9, action:15, commentaire:17, rex:15 };
@@ -216,14 +221,27 @@ function sortList(list) {
   const { sortKey:k, sortDir:dir } = data.settings;
   const sign = dir === "desc" ? -1 : 1;
   const col = cols().find(c => c.key === k);
-  const isDate = col && col.type === "date";
+  const type = col ? col.type : "text";
+
   return list.slice().sort((a, b) => {
+    if (type === "statut") {
+      const ia = STATUT_ORDER.indexOf(a.statut || "en-cours");
+      const ib = STATUT_ORDER.indexOf(b.statut || "en-cours");
+      return (ia - ib) * sign;
+    }
+    if (type === "score") {
+      const sa = a.score || 0, sb = b.score || 0;
+      if (!sa && !sb) return 0;
+      if (!sa) return 1;         // non notées toujours en fin
+      if (!sb) return -1;
+      return (sa - sb) * sign;
+    }
     const va = a[k] || "", vb = b[k] || "";
     if (!va && !vb) return 0;
-    if (!va) return 1;          // les vides toujours en fin
+    if (!va) return 1;
     if (!vb) return -1;
-    if (isDate) return (va < vb ? -1 : va > vb ? 1 : 0) * sign;
-    return va.localeCompare(vb, "fr", { sensitivity:"base", numeric:true }) * sign;
+    if (type === "date") return (va < vb ? -1 : va > vb ? 1 : 0) * sign;
+    return String(va).localeCompare(String(vb), "fr", { sensitivity:"base", numeric:true }) * sign;
   });
 }
 function filteredArchives() {
@@ -274,8 +292,7 @@ function renderTable() {
     // Badge statut dans la colonne Sujet
     visCols().forEach(c => {
       const td = el("td", { class:"k-" + c.key, "data-label":c.label });
-      const val = t[c.key] || "";
-      const shown = c.type === "date" ? frDate(val) : val;
+      const shown = cellValue(t, c);
       const cell = el("div", {
         class:"cell" + (shown ? "" : " is-empty"),
         "data-act":"edit", "data-key":c.key, tabindex:"0", role:"button",
@@ -284,20 +301,23 @@ function renderTable() {
       if (c.key === "sujet") {
         const wrap = el("div", { class:"sujet-wrap" });
         if (shown) wrap.appendChild(el("span", { class:"cell-text" }, shown));
-        // Tags
         const tags = t.tags || [];
         if (tags.length) {
           const trow = el("div", { class:"tag-row" });
           tags.forEach(tg => trow.appendChild(el("span", { class:"tag-chip" }, tg)));
           wrap.appendChild(trow);
         }
-        // Statut personnalisé (badge)
-        const st = t.statut || "en-cours";
-        if (st !== "en-cours") {
-          const s = STATUTS[st] || STATUTS["en-cours"];
-          wrap.appendChild(el("span", { class:"statut-badge badge-" + st }, s.label));
-        }
         cell.appendChild(wrap);
+      } else if (c.type === "statut") {
+        const st = t.statut || "en-cours";
+        cell.appendChild(el("span", { class:"statut-badge badge-" + st }, shown));
+      } else if (c.type === "score") {
+        if (t.score) {
+          const s = el("span", { class:"score-cell", title:t.score + " sur 5" });
+          s.appendChild(el("b", {}, "★".repeat(t.score)));
+          s.appendChild(el("i", {}, "★".repeat(5 - t.score)));
+          cell.appendChild(s);
+        }
       } else {
         if (shown) cell.appendChild(el("span", { class:"cell-text" }, shown));
       }
@@ -316,6 +336,15 @@ function renderTable() {
   $(".table-scroll").hidden = list.length === 0;
   $(".hint").hidden = list.length === 0;
   refreshCounters();
+}
+
+/* Rendu texte d'une cellule, selon le type de colonne */
+function cellValue(t, col) {
+  const v = t[col.key];
+  if (col.type === "date")   return frDate(v);
+  if (col.type === "statut")  return (STATUTS[v || "en-cours"] || STATUTS["en-cours"]).label;
+  if (col.type === "score")   return v ? "★".repeat(v) + "☆".repeat(5 - v) : "";
+  return v || "";
 }
 
 function pctWidth(key) {
@@ -368,6 +397,53 @@ function openEditorFor(id, key) {
   const task = data.tasks.find(t => t.id === id);
   const col = cols().find(c => c.key === key);
   if (!cellEl || !task || !col) return;
+
+  /* Statut : liste déroulante, validée au choix */
+  if (col.type === "statut") {
+    const sel = el("select", { class:"cell-editor" });
+    STATUT_ORDER.forEach(k => {
+      const o = el("option", { value:k }, STATUTS[k].label);
+      if ((task.statut || "en-cours") === k) o.selected = true;
+      sel.appendChild(o);
+    });
+    cellEl.replaceWith(sel);
+    sel.focus();
+    const done = () => {
+      if (sel.value !== (task.statut || "en-cours")) {
+        task.statut = sel.value; touch(task); save(); queueSync();
+      }
+      editing = null; renderTable();
+    };
+    sel.addEventListener("change", done);
+    sel.addEventListener("blur", () => { if (editing) { editing = null; renderTable(); } });
+    sel.addEventListener("keydown", e => {
+      if (e.key === "Escape") { editing = null; renderTable(); }
+    });
+    editing = () => {};
+    return;
+  }
+
+  /* Difficulté : cinq étoiles cliquables directement dans la cellule */
+  if (col.type === "score") {
+    const box = el("div", { class:"cell-stars" });
+    for (let i = 1; i <= 5; i++) {
+      const b = el("button", { class:"cell-star" + (i <= (task.score || 0) ? " is-on" : ""),
+        "data-v":i, title:i + " sur 5" }, "★");
+      b.addEventListener("mousedown", e => {
+        e.preventDefault();
+        task.score = task.score === i ? null : i;
+        touch(task); save(); queueSync();
+        editing = null; renderTable();
+      });
+      box.appendChild(b);
+    }
+    cellEl.replaceWith(box);
+    box.setAttribute("tabindex", "0");
+    box.focus();
+    box.addEventListener("blur", () => { if (editing) { editing = null; renderTable(); } });
+    editing = () => {};
+    return;
+  }
 
   const input = col.type === "date"
     ? el("input", { type:"date", class:"cell-editor" })
@@ -423,11 +499,36 @@ function newTask() {
   save(); queueSync();
   data.settings.sortKey = "date"; data.settings.sortDir = "desc";
   renderTable();
-  const tr = $(`tr[data-id="${t.id}"]`);
-  if (tr) {
-    tr.scrollIntoView({ block:"center", behavior:"smooth" });
-    openEditorFor(t.id, "sujet");
-  }
+  openSheet(t.id, { isNew:true });
+}
+
+/* Duplication : tout est repris sauf l'historique propre à la tâche d'origine */
+function duplicateTask(id) {
+  const src = data.tasks.find(x => x.id === id);
+  if (!src) return;
+  const now = new Date().toISOString();
+  const copy = {
+    ...src,
+    id: uid(),
+    sujet: (src.sujet || "Sans sujet") + " (copie)",
+    date: todayISO(),
+    archived: false,
+    archivedAt: undefined,
+    deleted: false,
+    deletedAt: undefined,
+    rex: "",
+    score: null,
+    comments: [],
+    linkedTo: [],
+    notifiedFor: undefined,
+    createdAt: now,
+    updatedAt: now
+  };
+  data.tasks.unshift(copy);
+  save(); queueSync();
+  renderTable(); renderBoard();
+  openSheet(copy.id);
+  toast("Tâche dupliquée. Ajustez le sujet et l'échéance.", "ok");
 }
 
 function archiveTask(id, sourceEl) {
@@ -539,20 +640,20 @@ function ding() {
 /* ============================================================
    Panneau détail
    ============================================================ */
-let sheetId = null;
-function openSheet(id) {
+let sheetId = null, sheetIsNew = false;
+function openSheet(id, opts) {
   const t = data.tasks.find(x => x.id === id);
   if (!t) return;
   sheetId = id;
+  sheetIsNew = !!(opts && opts.isNew);
   const st = statusOf(t);
-  $("#sheet-eyebrow").textContent = t.archived ? "Archivée · REX" : st.label;
+  $("#sheet-eyebrow").textContent = sheetIsNew
+    ? "Nouvelle tâche"
+    : (t.archived ? "Archivée · REX" : st.label);
   $("#sheet-title").textContent = t.sujet || "Nouvelle tâche";
 
   const body = $("#sheet-body");
   body.innerHTML = "";
-  buildSheetExtra(t, body);
-  const divider = el("div",{class:"sheet-divider"},"Champs");
-  body.appendChild(divider);
   cols().forEach(c => {
     const wrap = el("div", { class:"form-field" + (c.key === "rex" ? " is-rex" : "") });
     wrap.appendChild(el("label", { for:"f-" + c.key }, c.label));
@@ -571,15 +672,44 @@ function openSheet(id) {
     body.appendChild(wrap);
   });
 
-  $("#sheet-archive").hidden = !!t.archived;
+  body.appendChild(el("div", { class:"sheet-divider" }, "Compléments"));
+  buildSheetExtra(t, body);
+
+  $("#sheet-archive").hidden = !!t.archived || sheetIsNew;
   $("#sheet-restore").hidden = !t.archived;
+  $("#sheet-duplicate").hidden = sheetIsNew;
+  $("#sheet-validate").textContent = sheetIsNew ? "Créer la tâche" : "Valider";
   $("#sheet-backdrop").hidden = false;
   document.body.style.overflow = "hidden";
+
+  /* Sur une nouvelle tâche, le curseur se pose directement dans le sujet */
+  if (sheetIsNew) {
+    const f = $("#f-sujet");
+    if (f) { f.focus(); }
+  }
+}
+
+/* Validation : une nouvelle tâche restée entièrement vide est abandonnée */
+function validateSheet() {
+  const t = data.tasks.find(x => x.id === sheetId);
+  if (t && sheetIsNew) {
+    const keys = ["sujet","collaboration","objectif","echeance","action","commentaire","rex"];
+    if (keys.every(k => !String(t[k] || "").trim())) {
+      t.deleted = true; t.deletedAt = new Date().toISOString(); touch(t);
+      save(); queueSync();
+      closeSheet();
+      toast("Tâche vide abandonnée.", "warn");
+      return;
+    }
+    toast(`« ${t.sujet || "Tâche"} » créée.`, "ok");
+  }
+  closeSheet();
 }
 function closeSheet() {
   $("#sheet-backdrop").hidden = true;
   document.body.style.overflow = "";
   sheetId = null;
+  sheetIsNew = false;
   renderTable(); renderArchives(); renderBoard();
 }
 
@@ -667,40 +797,15 @@ function renderBoard() {
     countUp(num, k.n);
   });
 
-  /* Par collaboration */
-  const map = {};
-  all.forEach(t => {
-    const key = (t.collaboration || "").trim() || "Non attribuée";
-    map[key] = map[key] || { open:0, done:0 };
-    t.archived ? map[key].done++ : map[key].open++;
-  });
-  const entries = Object.entries(map).sort((x, y) => (y[1].open + y[1].done) - (x[1].open + x[1].done)).slice(0, 8);
-  const max = Math.max(1, ...entries.map(([, v]) => v.open + v.done));
-  const cc = $("#chart-collab");
-  cc.innerHTML = "";
-  if (!entries.length) cc.appendChild(el("p", { class:"cfg-note" }, "Les chiffres apparaîtront dès la première tâche."));
-  entries.forEach(([name, v]) => {
-    const r = el("div", { class:"bar-row" });
-    const h = el("div", { class:"bar-head" });
-    h.appendChild(el("span", {}, name));
-    h.appendChild(el("span", { class:"muted" }, `${v.open} en cours · ${v.done} archivées`));
-    r.appendChild(h);
-    const track = el("div", { class:"bar-track" });
-    const f1 = el("span", { class:"bar-fill f-open" });
-    const f2 = el("span", { class:"bar-fill f-done" });
-    track.append(f1, f2); r.appendChild(track); cc.appendChild(r);
-    requestAnimationFrame(() => {
-      f1.style.width = (v.open / max) * 100 + "%";
-      f2.style.width = (v.done / max) * 100 + "%";
-    });
-  });
-
   /* Activité par mois */
   const months = [];
   const now = new Date();
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({ key: d.toISOString().slice(0, 7), name: MONTHS[d.getMonth()], open:0, done:0 });
+    /* Clé construite en heure locale : toISOString() recule d'un mois
+       dès que le fuseau est en avance sur UTC. */
+    const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+    months.push({ key, name: MONTHS[d.getMonth()], open:0, done:0 });
   }
   all.forEach(t => {
     const c = months.find(m => m.key === String(t.date || t.createdAt || "").slice(0, 7));
@@ -732,8 +837,8 @@ function renderBoard() {
     { l:"En retard",     cls:"st-late",  n:late.length },
     { l:"Aujourd'hui",   cls:"st-today", n:a.filter(t => daysUntil(t.echeance) === 0).length },
     { l:"Sous 7 jours",  cls:"st-soon",  n:week.length },
-    { l:"Plus tard",     cls:"st-far",   n:a.filter(t => { const d = daysUntil(t.echeance); return d !== null && d > 7; }).length },
-    { l:"Sans échéance", cls:"st-none",  n:a.filter(t => !t.echeance).length }
+    { l:"Plus tard",     cls:"seg-later", n:a.filter(t => { const d = daysUntil(t.echeance); return d !== null && d > 7; }).length },
+    { l:"Sans échéance", cls:"seg-noduedate", n:a.filter(t => !t.echeance).length }
   ];
   const sMax = Math.max(1, ...segs.map(s => s.n));
   const ce = $("#chart-echeance");
@@ -743,7 +848,6 @@ function renderBoard() {
     const key = el("div", { class:"seg-key" });
     const sq = el("i", { class:"dot " + s.cls });
     sq.style.width = "12px"; sq.style.height = "12px";
-    if (s.cls === "st-none") sq.style.border = "1px solid #D6D6D6";
     key.append(sq, document.createTextNode(s.l));
     const track = el("div", { class:"seg-track" });
     const fill = el("span", { class:"seg-fill " + s.cls });
@@ -841,7 +945,7 @@ function countUp(node, target) {
 function buildPrint(mode) {
   const area = $("#print-area");
   if (mode === "synthese") return buildPrintSynth(area);
-  if (mode === "bord") return buildPrintBoard(area);
+  if (mode === "bord") return buildPrintBoard();
   const list = mode === "archives" ? filteredArchives() : filteredActives();
   const printCols = visCols();
 
@@ -857,7 +961,7 @@ function buildPrint(mode) {
   const ths = printCols.map(c =>
     `<th style="width:${pctWidth(c.key)}%">${esc(c.label)}</th>`).join("");
   const rows = list.map(t => "<tr>" + printCols.map(c => {
-    const v = c.type === "date" ? frDate(t[c.key]) : (t[c.key] || "");
+    const v = cellValue(t, c);
     return `<td class="${c.key === "sujet" ? "p-sujet" : ""}">${esc(v)}</td>`;
   }).join("") + "</tr>").join("");
 
@@ -875,25 +979,160 @@ function buildPrint(mode) {
   area.innerHTML = head +
     `<table class="p-table"><thead><tr>${ths}</tr></thead><tbody>${rows}${blankRows}</tbody></table>` +
     notesBlock +
-    `<div class="p-foot"><span>PIC — Programme d'Interaction Collaboratif</span><span>by Majin</span></div>`;
+    `<div class="p-foot"><span>TAF — Travail à Faire</span><span>by Majin</span></div>`;
 
   fitToPage(area);
 }
-function buildPrintBoard(area) {
+function buildPrintBoard() {
   const a = actives(), ar = archived(), all = live();
-  const late = a.filter(t => { const d=daysUntil(t.echeance); return d!==null&&d<0; });
-  const rate = all.length ? Math.round(ar.length/all.length*100) : 0;
+  const late = a.filter(t => { const d = daysUntil(t.echeance); return d !== null && d < 0; });
+  const week = a.filter(t => { const d = daysUntil(t.echeance); return d !== null && d >= 0 && d <= 7; });
+  const rate = all.length ? Math.round((ar.length / all.length) * 100) : 0;
+  const delays = ar.map(leadTime).filter(v => v !== null);
+  const avg = delays.length ? Math.round(delays.reduce((s, v) => s + v, 0) / delays.length) : null;
+
+  /* ── Indicateurs de tête ── */
   const kpis = [
-    ["Tâches en cours", a.length], ["En retard", late.length],
-    ["Archivées", ar.length], ["Taux réalisation", rate+"%"]
+    ["Tâches en cours", a.length],
+    ["En retard", late.length],
+    ["Sous 7 jours", week.length],
+    ["Archivées", ar.length],
+    ["Taux de réalisation", rate + "%"],
+    ["Délai moyen", avg === null ? "—" : avg + " j"]
   ];
-  const boardArea = $("#print-area");
-  boardArea.innerHTML =
-    `<div class="p-head"><div class="p-title">TABLEAU DE BORD</div><div class="p-majin">by Majin</div></div>` +
-    `<div class="p-sub"><span>Édité le ${frDate(todayISO())}</span></div>` +
-    `<div class="p-kpi-row">${kpis.map(([l,n])=>`<div class="p-kpi"><strong>${n}</strong><span>${l}</span></div>`).join("")}</div>` +
-    `<div class="p-foot"><span>PIC — Programme d'Interaction Collaboratif</span><span>by Majin</span></div>`;
-  fitToPage(boardArea);
+
+  /* ── Répartition par statut ── */
+  const parStatut = STATUT_ORDER.map(k => [
+    STATUTS[k].label,
+    a.filter(t => (t.statut || "en-cours") === k).length
+  ]);
+
+  /* ── État des échéances ── */
+  const parEcheance = [
+    ["En retard", late.length],
+    ["Aujourd'hui", a.filter(t => daysUntil(t.echeance) === 0).length],
+    ["Sous 7 jours", week.length],
+    ["Plus tard", a.filter(t => { const d = daysUntil(t.echeance); return d !== null && d > 7; }).length],
+    ["Sans échéance", a.filter(t => !t.echeance).length]
+  ];
+
+  /* ── Top des collaborations ── */
+  const tally = {};
+  all.forEach(t => {
+    const n = (t.collaboration || "").trim();
+    if (!n) return;
+    tally[n] = tally[n] || { total:0, ouvertes:0, closes:0, notes:[] };
+    tally[n].total++;
+    t.archived ? tally[n].closes++ : tally[n].ouvertes++;
+    if (t.score) tally[n].notes.push(t.score);
+  });
+  const top = Object.entries(tally)
+    .sort((x, y) => y[1].total - x[1].total)
+    .slice(0, 10)
+    .map(([n, v], i) => [
+      i + 1, n, v.total, v.ouvertes, v.closes,
+      v.notes.length ? (v.notes.reduce((s, x) => s + x, 0) / v.notes.length).toFixed(1) : "—"
+    ]);
+
+  /* ── Activité sur six mois ── */
+  const now = new Date(), months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+    months.push({ key, name: MONTHS[d.getMonth()], open:0, done:0 });
+  }
+  all.forEach(t => {
+    const c = months.find(m => m.key === String(t.date || t.createdAt || "").slice(0, 7));
+    if (c) c.open++;
+    if (t.archivedAt) {
+      const d = months.find(m => m.key === t.archivedAt.slice(0, 7));
+      if (d) d.done++;
+    }
+  });
+
+  /* ── Tâches à traiter : le cœur du document ── */
+  const urgent = a.filter(t => t.echeance)
+    .sort((x, y) => x.echeance.localeCompare(y.echeance))
+    .slice(0, 14)
+    .map(t => {
+      const d = daysUntil(t.echeance);
+      return [
+        frDate(t.echeance),
+        d < 0 ? `${-d} j de retard` : d === 0 ? "aujourd'hui" : `dans ${d} j`,
+        t.sujet || "—",
+        t.collaboration || "—",
+        (STATUTS[t.statut || "en-cours"] || STATUTS["en-cours"]).label,
+        t.score ? "★".repeat(t.score) : "",
+        d < 0 ? "late" : d === 0 ? "today" : ""
+      ];
+    });
+
+  /* ── Tags les plus employés ── */
+  const tagTally = {};
+  all.forEach(t => (t.tags || []).forEach(g => { tagTally[g] = (tagTally[g] || 0) + 1; }));
+  const tags = Object.entries(tagTally).sort((x, y) => y[1] - x[1]).slice(0, 8);
+
+  /* ── Assemblage ── */
+  const miniTable = (title, rows, headers) =>
+    `<section class="p-block">
+       <h3>${esc(title)}</h3>
+       <table class="p-mini">
+         ${headers ? `<thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead>` : ""}
+         <tbody>${rows.map(r => `<tr>${r.map((c, i) =>
+           `<td class="${i === 0 ? "p-c1" : "p-cn"}">${esc(String(c))}</td>`).join("")}</tr>`).join("")}
+         </tbody>
+       </table>
+     </section>`;
+
+  const head = `<div class="p-head">
+      <div class="p-title">${esc(APP_TITLE)} — TABLEAU DE BORD</div>
+      <div class="p-majin">by Majin</div>
+    </div>
+    <div class="p-sub">
+      <span>${all.length} tâche(s) suivie(s) · ${Object.keys(tally).length} collaboration(s) ·
+        ${ar.filter(t => t.rex).length} REX rédigé(s)</span>
+      <span>Édité le ${frDate(todayISO())}</span>
+    </div>`;
+
+  const kpiRow = `<div class="p-kpi-row">${kpis.map(([l, n]) =>
+    `<div class="p-kpi"><strong>${esc(String(n))}</strong><span>${esc(l)}</span></div>`).join("")}</div>`;
+
+  const urgentTable = urgent.length
+    ? `<section class="p-block p-block-wide">
+         <h3>Prochaines échéances</h3>
+         <table class="p-mini p-urgent">
+           <thead><tr><th>Échéance</th><th>Délai</th><th>Sujet</th><th>Collaboration</th><th>Statut</th><th>Diff.</th></tr></thead>
+           <tbody>${urgent.map(r =>
+             `<tr class="${r[6]}">${r.slice(0, 6).map((c, i) =>
+               `<td class="${i === 2 ? "p-sujet" : ""}">${esc(String(c))}</td>`).join("")}</tr>`).join("")}
+           </tbody>
+         </table>
+       </section>`
+    : "";
+
+  $("#print-area").innerHTML = head + kpiRow +
+    `<div class="p-board-grid">` +
+      miniTable("Répartition par statut", parStatut) +
+      miniTable("État des échéances", parEcheance) +
+      miniTable("Activité par mois", months.map(m => [m.name, m.open, m.done]),
+                ["Mois", "Créées", "Archivées"]) +
+      (tags.length ? miniTable("Tags les plus employés", tags) : "") +
+    `</div>` +
+    (top.length
+      ? `<section class="p-block p-block-wide">
+           <h3>Top des collaborations</h3>
+           <table class="p-mini p-top">
+             <thead><tr><th>#</th><th>Collaboration</th><th>Total</th><th>En cours</th><th>Archivées</th><th>Difficulté</th></tr></thead>
+             <tbody>${top.map(r => `<tr>${r.map((c, i) =>
+               `<td class="${i === 1 ? "p-sujet" : ""}">${esc(String(c))}</td>`).join("")}</tr>`).join("")}
+             </tbody>
+           </table>
+         </section>`
+      : "") +
+    urgentTable +
+    `<div class="p-foot"><span>TAF — Travail à Faire</span><span>by Majin</span></div>`;
+
+  fitToPage($("#print-area"));
 }
 
 function buildPrintSynth(area) {
@@ -903,7 +1142,7 @@ function buildPrintSynth(area) {
       <div class="p-majin">by Majin</div>
     </div>
     <div class="p-sub">
-      <span>PIC — Programme d'Interaction Collaboratif · ${d.stats.closes} tâche(s) close(s) ·
+      <span>TAF — Travail à Faire · ${d.stats.closes} tâche(s) close(s) ·
         ${d.stats.avec} REX rédigé(s) · ${d.stats.collabs} collaboration(s) ·
         délai moyen ${d.stats.moyen === null ? "—" : d.stats.moyen + " j"}</span>
       <span>Édité le ${frDate(todayISO())}</span>
@@ -915,7 +1154,7 @@ function buildPrintSynth(area) {
         <h3>${esc(name)} <em>${items.length}</em></h3>
         ${items.map(t => `<div class="p-item">
             <b>${esc(t.sujet || "Sans sujet")}</b>
-            <i>${esc(frDate(String(t.archivedAt).slice(0, 10)))}${leadTime(t) !== null ? " · " + leadTime(t) + " j" : ""}</i>
+            <i>${esc(frDate(String(t.archivedAt).slice(0, 10)))}${leadTime(t) !== null ? " · " + leadTime(t) + " j" : ""}${t.score ? " · " + "★".repeat(t.score) : ""}</i>
             <p>${esc((t.rex || "").trim() || "REX non rédigé.")}</p>
           </div>`).join("")}
       </section>`).join("");
@@ -967,7 +1206,7 @@ function checkReminders() {
 
   if ("Notification" in window && Notification.permission === "granted" && !data.sync.pushEndpoint) {
     try {
-      new Notification("PIC — rappel d'échéance", { body: msg, icon:"icon-192.png", tag:"pic-rappel" });
+      new Notification("TAF — rappel d'échéance", { body: msg, icon:"icon-192.png", tag:"taf-rappel" });
     } catch (e) { /* iOS hors PWA */ }
   }
 }
@@ -1087,7 +1326,7 @@ function importJSON(file) {
       save(); renderAll();
       toast(`Import terminé : ${added} tâche(s) ajoutée(s).`, "ok");
     } catch (e) {
-      toast("Fichier illisible. Attendu : un export JSON de PIC.", "warn");
+      toast("Fichier illisible. Attendu : un export JSON de TAF.", "warn");
     }
   };
   r.readAsText(file);
@@ -1201,20 +1440,6 @@ function editNote(id) {
 
 /* ── Panneau détail v2 : statut, tags, score, récurrence, liens, fil ── */
 function buildSheetExtra(t, body) {
-  // Statut
-  const stWrap = el("div", { class:"form-field" });
-  stWrap.appendChild(el("label", {}, "Statut"));
-  const stSel = el("select", { id:"s-statut" });
-  Object.entries(STATUTS).forEach(([k, v]) => {
-    const o = el("option", { value:k }, v.label);
-    if ((t.statut || "en-cours") === k) o.selected = true;
-    stSel.appendChild(o);
-  });
-  stSel.addEventListener("change", () => {
-    t.statut = stSel.value; touch(t); save(); queueSync(); renderTable();
-  });
-  stWrap.appendChild(stSel); body.appendChild(stWrap);
-
   // Tags
   const tagWrap = el("div", { class:"form-field" });
   tagWrap.appendChild(el("label", {}, "Tags (séparés par une virgule)"));
@@ -1231,22 +1456,19 @@ function buildSheetExtra(t, body) {
   const scWrap = el("div", { class:"form-field" });
   scWrap.appendChild(el("label", {}, "Difficulté perçue (1-5 étoiles)"));
   const scRow = el("div", { class:"score-row" });
+  const scoreNote = el("span", { class:"score-note" }, t.score ? t.score + " / 5" : "Non noté");
   for (let i = 1; i <= 5; i++) {
     const btn = el("button", { class:"star-btn" + (i <= (t.score || 0) ? " is-on" : ""),
       "data-v":i, "aria-label":"Note " + i + " sur 5" }, "★");
     btn.addEventListener("click", () => {
       t.score = t.score === i ? null : i;
-      touch(t); save(); queueSync();
+      touch(t); save(); queueSync(); renderTable();
       $$(".star-btn", scRow).forEach((b, j) => b.classList.toggle("is-on", j < (t.score || 0)));
+      scoreNote.textContent = t.score ? t.score + " / 5" : "Non noté";
     });
     scRow.appendChild(btn);
   }
-  const scoreNote = el("span", { class:"score-note" },
-    t.score ? t.score + " / 5" : "Non noté");
   scRow.appendChild(scoreNote);
-  scRow.addEventListener("click", () => {
-    scoreNote.textContent = (t.score || 0) + " / 5";
-  });
   scWrap.appendChild(scRow); body.appendChild(scWrap);
 
   // Récurrence
@@ -1430,7 +1652,7 @@ function renderKanban() {
 /* ============================================================
    Partage en lecture seule
    ============================================================ */
-const SHARE_KEY = "pic-share-token";
+const SHARE_KEY = "taf-share-token";
 
 function openSharePanel() {
   const existing = data.sync.shareToken;
@@ -1485,7 +1707,7 @@ function checkShareMode() {
   const token = url.searchParams.get("share");
   if (!token) return false;
   document.body.classList.add("is-share");
-  document.title = "PIC — Vue partagée";
+  document.title = "TAF — Vue partagée";
   loadSharedView(token);
   return true;
 }
@@ -1507,9 +1729,9 @@ function renderReadOnly(tasks, cols) {
   document.body.innerHTML = `
     <div class="app-head">
       <div class="head-left">
-        <div class="logo-square"><span>PIC</span></div>
+        <div class="logo-square"><span>TAF</span></div>
         <div class="head-titles">
-          <h1>Programme d'Interaction Collaboratif</h1>
+          <h1>Travail à Faire</h1>
           <p class="head-sub" style="color:var(--o-yellow)">Vue en lecture seule</p>
         </div>
       </div>
@@ -1689,7 +1911,7 @@ function b64ToBytes(base64) {
 
 async function enablePush() {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-    toast("Ce navigateur ne gère pas les rappels poussés. Sur iPhone, ajoutez d'abord PIC à l'écran d'accueil.", "warn");
+    toast("Ce navigateur ne gère pas les rappels poussés. Sur iPhone, ajoutez d'abord TAF à l'écran d'accueil.", "warn");
     return;
   }
   if (!data.sync.enabled) { toast("Activez d'abord la synchronisation : les rappels s'appuient dessus.", "warn"); return; }
@@ -1744,7 +1966,7 @@ async function updatePushState() {
   const line = $("#push-state"), on = $("#btn-push-on"), off = $("#btn-push-off");
   if (!line) return;
   if (!("PushManager" in window)) {
-    line.textContent = "Rappels poussés indisponibles ici. Sur iPhone, ajoutez PIC à l'écran d'accueil puis rouvrez ce réglage.";
+    line.textContent = "Rappels poussés indisponibles ici. Sur iPhone, ajoutez TAF à l'écran d'accueil puis rouvrez ce réglage.";
     if (on) on.hidden = true; if (off) off.hidden = true;
     return;
   }
@@ -1755,7 +1977,7 @@ async function updatePushState() {
   } catch (e) { active = false; }
   line.textContent = active
     ? "Rappels actifs : une notification chaque matin si une échéance approche, même application fermée."
-    : "Inactifs. Les rappels ne s'affichent que si PIC est ouvert.";
+    : "Inactifs. Les rappels ne s'affichent que si TAF est ouvert.";
   if (on) on.hidden = active;
   if (off) off.hidden = !active;
 }
@@ -1964,6 +2186,10 @@ function wire() {
   /* Panneau détail */
   $("#sheet-close").addEventListener("click", closeSheet);
   $("#sheet-backdrop").addEventListener("click", e => { if (e.target.id === "sheet-backdrop") closeSheet(); });
+  $("#sheet-validate").addEventListener("click", validateSheet);
+  $("#sheet-duplicate").addEventListener("click", () => {
+    const id = sheetId; closeSheet(); duplicateTask(id);
+  });
   $("#sheet-archive").addEventListener("click", () => { const id = sheetId; closeSheet(); archiveTask(id); });
   $("#sheet-restore").addEventListener("click", () => { const id = sheetId; closeSheet(); restoreTask(id); });
   $("#sheet-delete").addEventListener("click", () => {
