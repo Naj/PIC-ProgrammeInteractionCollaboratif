@@ -2077,9 +2077,33 @@ function wire() {
     if (e.target.files[0]) importJSON(e.target.files[0]);
     e.target.value = "";
   });
-  $("#cfg-reset").addEventListener("click", () => {
-    if (confirm("Effacer toutes les tâches et tous les REX de ce navigateur ? Exportez d'abord si vous voulez les garder.")) {
-      data.tasks = []; save(); closeCfg(); renderAll();
+  $("#cfg-reset").addEventListener("click", async () => {
+    const n = live().length + notes().length;
+    const synced = data.sync.enabled;
+    const msg = synced
+      ? `Effacer ${n} élément(s) ? La suppression sera propagée à tous vos appareils synchronisés. Exportez d'abord si vous voulez les garder.`
+      : `Effacer ${n} élément(s) de ce navigateur ? Exportez d'abord si vous voulez les garder.`;
+    if (!confirm(msg)) return;
+
+    /* On ne vide pas la liste : on marque tout comme supprimé, sinon la
+       synchronisation suivante redescendrait les tâches depuis le serveur. */
+    const now = new Date().toISOString();
+    data.tasks.forEach(t => {
+      if (t.deleted) return;
+      t.deleted = true;
+      t.deletedAt = now;
+      t.updatedAt = now;
+    });
+    lastUndo = null;
+    save();
+    closeCfg();
+    renderAll();
+
+    if (synced) {
+      toast("Effacement en cours de propagation…", "warn");
+      await syncNow(true);
+      toast("Données effacées ici et sur vos autres appareils.", "ok");
+    } else {
       toast("Données effacées.", "warn");
     }
   });

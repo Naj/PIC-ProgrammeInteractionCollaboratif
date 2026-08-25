@@ -1,5 +1,5 @@
 /* PIC — service worker · by Majin */
-const CACHE = "pic-majin-v6";
+const CACHE = "pic-majin-v7";
 const ASSETS = [
   "./", "./index.html", "./styles.css", "./app.js",
   "./intro.js", "./manifest.webmanifest", "./favicon.svg",
