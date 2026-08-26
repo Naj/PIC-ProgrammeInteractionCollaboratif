@@ -2423,7 +2423,23 @@ function boot() {
   setSyncState(data.sync.enabled ? "pending" : "off");
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    /* Un service worker déjà en place signifie que l'application tournait
+       sur une version antérieure : quand la nouvelle prend la main, on
+       recharge une fois pour que l'écran corresponde au code servi. */
+    const avaitUnControleur = !!navigator.serviceWorker.controller;
+    let dejaRecharge = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (avaitUnControleur && !dejaRecharge) {
+        dejaRecharge = true;
+        location.reload();
+      }
+    });
+    navigator.serviceWorker.register("sw.js")
+      .then(reg => {
+        reg.update();                                  // au démarrage
+        setInterval(() => reg.update(), 15 * 60000);   // puis toutes les 15 min
+      })
+      .catch(() => {});
   }
 
   const started = (data.settings.intro !== false && window.PICIntro)
