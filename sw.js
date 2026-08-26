@@ -1,5 +1,5 @@
 /* TAF — service worker · by Majin */
-const CACHE = "taf-majin-v10";
+const CACHE = "taf-majin-v12";
 const ASSETS = [
   "./", "./index.html", "./styles.css", "./app.js",
   "./intro.js", "./manifest.webmanifest", "./favicon.svg",

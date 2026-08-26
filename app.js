@@ -1311,28 +1311,71 @@ function download(name, content, type) {
 function importJSON(file) {
   const r = new FileReader();
   r.onload = () => {
+    let parsed;
     try {
-      const parsed = JSON.parse(r.result);
-      if (!parsed || !Array.isArray(parsed.tasks)) throw new Error("format");
-      const existing = new Set(data.tasks.map(t => t.id));
-      let added = 0;
-      parsed.tasks.forEach(t => { if (t && t.id && !existing.has(t.id)) { data.tasks.push(t); added++; } });
-      if (Array.isArray(parsed.columns)) {
-        data.columns = DEFAULT_COLUMNS.map(def => {
-          const f = parsed.columns.find(c => c.key === def.key);
-          return f ? { ...def, label:f.label || def.label, visible:f.visible !== false } : { ...def };
-        });
-      }
-      save(); renderAll();
-      toast(`Import terminé : ${added} tâche(s) ajoutée(s).`, "ok");
+      parsed = JSON.parse(r.result);
     } catch (e) {
-      toast("Fichier illisible. Attendu : un export JSON de TAF.", "warn");
+      toast("Fichier illisible : ce n'est pas du JSON valide.", "warn");
+      return;
+    }
+    if (!parsed || !Array.isArray(parsed.tasks)) {
+      toast("Format inattendu : ce fichier n'est pas un export TAF.", "warn");
+      return;
+    }
+
+    /* Fusion identique à la synchronisation : la version modifiée
+       le plus récemment l'emporte, tâche par tâche. */
+    const byId = new Map(data.tasks.map(t => [t.id, t]));
+    let added = 0, updated = 0, ignored = 0, tombs = 0;
+
+    parsed.tasks.forEach(t => {
+      if (!t || typeof t.id !== "string") return;
+      if (t.deleted) tombs++;
+      const local = byId.get(t.id);
+      if (!local) {
+        data.tasks.push({ ...taskDefaults(), ...t });
+        byId.set(t.id, t);
+        if (!t.deleted) added++;      // une trace de suppression n'est pas un ajout
+        return;
+      }
+      if (String(t.updatedAt || "") > String(local.updatedAt || "")) {
+        Object.assign(local, t);
+        if (!t.deleted) updated++;
+      } else if (!t.deleted) {
+        ignored++;
+      }
+    });
+
+    if (Array.isArray(parsed.columns) && parsed.columns.length) {
+      data.columns = DEFAULT_COLUMNS.map(def => {
+        const f = parsed.columns.find(c => c.key === def.key);
+        return f ? { ...def, label:f.label || def.label, visible:f.visible !== false } : { ...def };
+      });
+      touchMeta();
+    }
+
+    migrateTasks();
+    save(); queueSync(); renderAll();
+
+    /* Compte rendu honnête : on distingue ce qui a été repris de ce
+       qui n'était qu'une trace de suppression. */
+    const vivantes = (parsed.tasks || []).filter(t => t && !t.deleted).length;
+    const parts = [];
+    if (added)   parts.push(`${added} ajoutée(s)`);
+    if (updated) parts.push(`${updated} mise(s) à jour`);
+    if (ignored) parts.push(`${ignored} déjà à jour`);
+
+    if (!vivantes && tombs) {
+      toast(`Fichier lu, mais il ne contient aucune tâche vivante : ${tombs} trace(s) de suppression uniquement.`, "warn");
+    } else if (!parts.length) {
+      toast("Rien à importer : votre version est déjà la plus récente.", "warn");
+    } else {
+      toast("Import terminé — " + parts.join(", ") + ".", "ok");
     }
   };
+  r.onerror = () => toast("Lecture du fichier impossible.", "warn");
   r.readAsText(file);
 }
-
-
 
 /* ============================================================
    Notes en attente
