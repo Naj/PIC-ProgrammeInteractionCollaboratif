@@ -262,7 +262,12 @@
           <button class="ghost-btn" id="cfg-export">Exporter (JSON)</button>
           <button class="ghost-btn" id="cfg-csv">Exporter (CSV)</button>
           <button class="ghost-btn" id="cfg-import">Importer…</button>
-          <input type="file" id="file-import" accept=".json,application/json" hidden>
+          <input type="file" id="file-import" accept=".json,.csv,.txt,application/json,text/csv" hidden>
+        </div>
+        <h4 class="cfg-sub">Ajouter des tâches en lot</h4>
+        <p class="cfg-note">Téléchargez le modèle, complétez-le dans votre tableur, puis réimportez-le. Une ligne par tâche ; seule la colonne Sujet est obligatoire.</p>
+        <div class="cfg-actions">
+          <button class="primary-btn" id="cfg-modele">Télécharger le modèle CSV</button>
         </div>
         <p class="cfg-note" id="storage-state"></p>
       </section>

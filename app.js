@@ -1377,6 +1377,179 @@ function importJSON(file) {
   r.readAsText(file);
 }
 
+
+/* ============================================================
+   Import CSV — modèle à compléter dans un tableur
+   Séparateur point-virgule ou virgule, détecté automatiquement.
+   ============================================================ */
+
+/* Découpage respectant les guillemets et les retours à la ligne internes */
+function parseCSV(text) {
+  text = text.replace(/^\uFEFF/, "");                 // BOM Excel
+  const firstLine = text.slice(0, text.indexOf("\n") > -1 ? text.indexOf("\n") : text.length);
+  const sep = (firstLine.split(";").length > firstLine.split(",").length) ? ";" : ",";
+
+  const rows = [];
+  let row = [], champ = "", dansGuillemets = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], suivant = text[i + 1];
+    if (dansGuillemets) {
+      if (c === '"' && suivant === '"') { champ += '"'; i++; }
+      else if (c === '"') dansGuillemets = false;
+      else champ += c;
+    } else if (c === '"') {
+      dansGuillemets = true;
+    } else if (c === sep) {
+      row.push(champ); champ = "";
+    } else if (c === "\n") {
+      row.push(champ); champ = "";
+      if (row.some(x => x.trim())) rows.push(row);
+      row = [];
+    } else if (c !== "\r") {
+      champ += c;
+    }
+  }
+  row.push(champ);
+  if (row.some(x => x.trim())) rows.push(row);
+  return rows;
+}
+
+/* Les intitulés sont reconnus sans tenir compte des accents ni de la casse */
+const sansAccents = s => String(s || "")
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .toLowerCase().trim();
+
+const ENTETES = {
+  date:["date","date de creation","creation"],
+  sujet:["sujet","titre","tache","tâche"],
+  collaboration:["collaboration","collaborateur","avec","qui"],
+  objectif:["objectif","but"],
+  echeance:["date d'echeance","echeance","date echeance","deadline","pour le"],
+  statut:["statut","etat"],
+  action:["action","actions","a faire"],
+  commentaire:["commentaire","commentaires","note"],
+  score:["difficulte","difficulté","score","etoiles"],
+  rex:["rex","retour d'experience","retour"],
+  tags:["tags","tag","mots cles","etiquettes"]
+};
+
+function cleDepuisEntete(h) {
+  const n = sansAccents(h);
+  for (const [cle, variantes] of Object.entries(ENTETES)) {
+    if (variantes.some(v => sansAccents(v) === n)) return cle;
+  }
+  return null;
+}
+
+/* Accepte 25/08/2026, 25-08-2026 et 2026-08-25 */
+function dateDepuisTexte(v) {
+  const s = String(v || "").trim();
+  if (!s) return "";
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return s;
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return "";
+}
+
+function statutDepuisTexte(v) {
+  const n = sansAccents(v).replace(/[\s_]+/g, "-");
+  if (!n) return "en-cours";
+  if (n.startsWith("en-attente") || n === "attente") return "en-attente";
+  if (n.startsWith("bloqu")) return "bloquee";
+  if (n.startsWith("delegu")) return "deleguee";
+  return "en-cours";
+}
+
+function scoreDepuisTexte(v) {
+  const s = String(v || "").trim();
+  if (!s) return null;
+  const etoiles = (s.match(/★/g) || []).length;
+  if (etoiles) return Math.min(5, etoiles);
+  const n = parseInt(s, 10);
+  return (n >= 1 && n <= 5) ? n : null;
+}
+
+function importCSV(file) {
+  const r = new FileReader();
+  r.onload = () => {
+    const rows = parseCSV(String(r.result));
+    if (rows.length < 2) {
+      toast("Fichier vide : il faut une ligne d'intitulés puis au moins une tâche.", "warn");
+      return;
+    }
+
+    const entetes = rows[0].map(cleDepuisEntete);
+    if (!entetes.includes("sujet")) {
+      toast("Colonne « Sujet » introuvable. Repartez du modèle fourni.", "warn");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    let ajoutees = 0, ignorees = 0;
+
+    rows.slice(1).forEach(cells => {
+      const brut = {};
+      entetes.forEach((cle, i) => { if (cle) brut[cle] = (cells[i] || "").trim(); });
+
+      if (!brut.sujet) { ignorees++; return; }        // une tâche sans sujet n'a pas de sens
+
+      data.tasks.unshift({
+        ...taskDefaults(),
+        id: uid(),
+        date: dateDepuisTexte(brut.date) || todayISO(),
+        sujet: brut.sujet,
+        collaboration: brut.collaboration || "",
+        objectif: brut.objectif || "",
+        echeance: dateDepuisTexte(brut.echeance),
+        statut: statutDepuisTexte(brut.statut),
+        action: brut.action || "",
+        commentaire: brut.commentaire || "",
+        score: scoreDepuisTexte(brut.score),
+        rex: brut.rex || "",
+        tags: (brut.tags || "").split(/[,;|]/).map(s => s.trim()).filter(Boolean),
+        archived: false,
+        createdAt: now,
+        updatedAt: now
+      });
+      ajoutees++;
+    });
+
+    if (!ajoutees) {
+      toast("Aucune ligne exploitable : la colonne Sujet est vide partout.", "warn");
+      return;
+    }
+    save(); queueSync(); renderAll();
+    toast(`${ajoutees} tâche(s) importée(s)` +
+          (ignorees ? `, ${ignorees} ligne(s) sans sujet ignorée(s).` : "."), "ok");
+  };
+  r.onerror = () => toast("Lecture du fichier impossible.", "warn");
+  r.readAsText(file, "UTF-8");
+}
+
+/* Modèle généré à partir de vos intitulés de colonnes du moment */
+function telechargerModele() {
+  const entetes = ["Date", labelOf("sujet"), labelOf("collaboration"), labelOf("objectif"),
+                   "Date d'échéance", "Statut", labelOf("action"), labelOf("commentaire"),
+                   "Difficulté", "Tags", labelOf("rex")];
+
+  const exemples = [
+    [frDate(todayISO()), "Préparer la réunion de lancement", "Laurence", "Cadrer le périmètre",
+     frDate(todayISO(Date.now() + 7 * 864e5)), "En cours", "Rédiger l'ordre du jour",
+     "Support à diffuser 48 h avant", "3", "cadrage,réunion", ""],
+    [frDate(todayISO()), "Récupérer la capsule", "Yohan", "Déployer sur la plateforme",
+     frDate(todayISO(Date.now() + 14 * 864e5)), "En attente", "Relancer le fournisseur",
+     "", "", "déploiement", ""]
+  ];
+
+  const ligne = arr => arr.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";");
+  const csv = [ligne(entetes), ...exemples.map(ligne)].join("\r\n");
+
+  download(`modele-taches-TAF.csv`, "\uFEFF" + csv, "text/csv;charset=utf-8");
+  toast("Modèle téléchargé. Remplissez-le, puis réimportez-le avec « Importer… ».", "ok");
+}
+
 /* ============================================================
    Notes en attente
    Ce qui n'est pas encore une tâche : une idée, une relance,
@@ -2343,9 +2516,15 @@ function wire() {
   $("#cfg-csv").addEventListener("click", exportCSV);
   $("#cfg-import").addEventListener("click", () => $("#file-import").click());
   $("#file-import").addEventListener("change", e => {
-    if (e.target.files[0]) importJSON(e.target.files[0]);
+    const f = e.target.files[0];
+    if (f) {
+      const nom = f.name.toLowerCase();
+      if (nom.endsWith(".csv") || nom.endsWith(".txt")) importCSV(f);
+      else importJSON(f);
+    }
     e.target.value = "";
   });
+  $("#cfg-modele").addEventListener("click", telechargerModele);
   $("#cfg-reset").addEventListener("click", async () => {
     const n = live().length + notes().length;
     const synced = data.sync.enabled;
