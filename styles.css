@@ -1245,3 +1245,15 @@ select.cell-editor:focus{outline:none;box-shadow:0 0 0 3px rgba(255,121,0,.25)}
   .p-urgent tr.late td{background:#FFE9D6}
   .p-urgent tr.late td:nth-child(2){font-weight:700}
   .p-urgent tr.today td{background:#FFF6B6}
+
+/* ── Synthèse REX imprimée : détail de chaque tâche ── */
+.p-item .p-f{margin-top:2pt}
+.p-item .p-f > span{
+  font-size:6pt;text-transform:uppercase;letter-spacing:.08em;
+  color:#666;font-weight:700;display:block;
+}
+.p-item .p-f p{margin:0;font-size:7pt;line-height:1.3}
+.p-item .p-journal{border-left:1pt solid #999;padding-left:4pt;margin-top:3pt}
+.p-item .p-journal p em{font-style:normal;font-weight:700;color:#555}
+.p-item .p-rex{border-left:2pt solid #FF7900;padding-left:4pt;margin-top:3pt}
+.p-item .p-rex p{font-size:7.5pt}

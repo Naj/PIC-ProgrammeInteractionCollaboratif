@@ -655,19 +655,32 @@ function openSheet(id, opts) {
   const body = $("#sheet-body");
   body.innerHTML = "";
   cols().forEach(c => {
+    /* La difficulté est saisie plus bas avec les étoiles : pas de doublon ici. */
+    if (c.type === "score") return;
+
     const wrap = el("div", { class:"form-field" + (c.key === "rex" ? " is-rex" : "") });
     wrap.appendChild(el("label", { for:"f-" + c.key }, c.label));
     let f;
-    if (c.type === "date") f = el("input", { type:"date", id:"f-" + c.key, value:t[c.key] || "" });
+    if (c.type === "statut") {
+      f = el("select", { id:"f-" + c.key });
+      STATUT_ORDER.forEach(k => {
+        const o = el("option", { value:k }, STATUTS[k].label);
+        if ((t.statut || "en-cours") === k) o.selected = true;
+        f.appendChild(o);
+      });
+    }
+    else if (c.type === "date") f = el("input", { type:"date", id:"f-" + c.key, value:t[c.key] || "" });
     else if (c.type === "long") { f = el("textarea", { id:"f-" + c.key }); f.value = t[c.key] || ""; }
     else { f = el("input", { type:"text", id:"f-" + c.key }); f.value = t[c.key] || ""; }
     if (c.key === "rex") f.placeholder = "Ce qui a marché, ce qu'on refait, ce qu'on évite la prochaine fois.";
-    f.addEventListener("input", () => {
+    const majChamp = () => {
       t[c.key] = f.value;
       touch(t);
       save(); queueSync();
       if (c.key === "sujet") $("#sheet-title").textContent = f.value || "Nouvelle tâche";
-    });
+      if (c.type === "statut") renderView();
+    };
+    f.addEventListener(c.type === "statut" ? "change" : "input", majChamp);
     wrap.appendChild(f);
     body.appendChild(wrap);
   });
@@ -1148,15 +1161,33 @@ function buildPrintSynth(area) {
       <span>Édité le ${frDate(todayISO())}</span>
     </div>`;
 
+  /* Le REX seul ne dit rien hors contexte : on rappelle la tâche entière. */
+  const champ = (label, valeur) => valeur
+    ? `<div class="p-f"><span>${esc(label)}</span><p>${esc(valeur)}</p></div>` : "";
+
   const groups = Object.entries(d.groups)
     .sort((a, b) => b[1].length - a[1].length)
     .map(([name, items]) => `<section class="p-group">
         <h3>${esc(name)} <em>${items.length}</em></h3>
-        ${items.map(t => `<div class="p-item">
+        ${items.map(t => {
+          const notes = (t.comments || []).filter(c => !c.deleted)
+            .sort((x, y) => String(x.at).localeCompare(String(y.at)));
+          return `<div class="p-item">
             <b>${esc(t.sujet || "Sans sujet")}</b>
-            <i>${esc(frDate(String(t.archivedAt).slice(0, 10)))}${leadTime(t) !== null ? " · " + leadTime(t) + " j" : ""}${t.score ? " · " + "★".repeat(t.score) : ""}</i>
-            <p>${esc((t.rex || "").trim() || "REX non rédigé.")}</p>
-          </div>`).join("")}
+            <i>Ouverte le ${esc(frDate(t.date))} · close le ${esc(frDate(String(t.archivedAt).slice(0, 10)))}${
+              leadTime(t) !== null ? " · " + leadTime(t) + " j de traitement" : ""}${
+              t.score ? " · difficulté " + "★".repeat(t.score) : ""}${
+              (t.tags || []).length ? " · " + esc(t.tags.join(", ")) : ""}</i>
+            ${champ(labelOf("objectif"), t.objectif)}
+            ${champ(labelOf("action"), t.action)}
+            ${champ(labelOf("commentaire"), t.commentaire)}
+            ${notes.length ? `<div class="p-f p-journal"><span>Journal de bord</span>${
+              notes.map(c => `<p><em>${esc(frDate(c.at.slice(0, 10)))}</em> ${esc(c.texte)}</p>`).join("")
+            }</div>` : ""}
+            <div class="p-f p-rex"><span>${esc(labelOf("rex"))}</span><p>${
+              esc((t.rex || "").trim() || "REX non rédigé.")}</p></div>
+          </div>`;
+        }).join("")}
       </section>`).join("");
 
   area.innerHTML = head + `<div class="p-synth">${groups}</div>` +
@@ -1856,7 +1887,7 @@ function renderKanban() {
       const task = data.tasks.find(x => x.id === id);
       if (task && task.statut !== col.key) {
         task.statut = col.key; touch(task); save(); queueSync();
-        renderKanban(); renderTable();
+        renderView(); renderBoard();
       }
     });
     colEl.appendChild(drop);
@@ -2320,8 +2351,14 @@ function setView(v) {
   window.scrollTo({ top:0, behavior:"smooth" });
 }
 
+/* Rend la vue des tâches, tableau ou kanban selon le mode actif. */
+function renderView() {
+  if (data.settings.kanban) { renderKanban(); refreshCounters(); }
+  else renderTable();
+}
+
 function renderAll() {
-  if (data.settings.kanban) renderKanban(); else renderTable();
+  renderView();
   renderNotes(); renderArchives(); renderBoard();
 }
 
@@ -2341,19 +2378,19 @@ function wire() {
   let qTimer;
   $("#q").addEventListener("input", e => {
     clearTimeout(qTimer);
-    qTimer = setTimeout(() => { filters.q = e.target.value; renderTable(); }, 130);
+    qTimer = setTimeout(() => { filters.q = e.target.value; renderView(); }, 130);
   });
-  $("#f-collab").addEventListener("change", e => { filters.collab = e.target.value; renderTable(); });
-  $("#f-echeance").addEventListener("change", e => { filters.ech = e.target.value; renderTable(); });
-  $("#f-tag").addEventListener("change", e => { filters.tag = e.target.value; renderTable(); });
-  $("#f-statut").addEventListener("change", e => { filters.statut = e.target.value; renderTable(); });
+  $("#f-collab").addEventListener("change", e => { filters.collab = e.target.value; renderView(); });
+  $("#f-echeance").addEventListener("change", e => { filters.ech = e.target.value; renderView(); });
+  $("#f-tag").addEventListener("change", e => { filters.tag = e.target.value; renderView(); });
+  $("#f-statut").addEventListener("change", e => { filters.statut = e.target.value; renderView(); });
   $("#f-tag-arch").addEventListener("change", e => { filters.tagArch = e.target.value; renderArchives(); });
   /* Kanban */
   $("#btn-kanban").addEventListener("click", () => {
     data.settings.kanban = !data.settings.kanban; save();
     document.body.classList.toggle("is-kanban", data.settings.kanban);
     $("#btn-kanban").textContent = data.settings.kanban ? "Tableau" : "Kanban";
-    if (data.settings.kanban) renderKanban(); else renderTable();
+    renderView();
   });
   $("#q-arch").addEventListener("input", e => { filters.qArch = e.target.value; renderArchives(); });
   $("#f-collab-arch").addEventListener("change", e => { filters.collabArch = e.target.value; renderArchives(); });
