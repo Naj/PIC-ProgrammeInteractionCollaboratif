@@ -6,7 +6,7 @@
    immédiatement, sans vider quoi que ce soit à la main, tout
    en gardant l'application utilisable hors ligne.
    ============================================================ */
-const CACHE = "taf-majin-v14";
+const CACHE = "taf-majin-v15";
 
 /* Ressources figées : elles ne changent qu'en cas de refonte visuelle. */
 const STATIC = [

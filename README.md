@@ -7,6 +7,51 @@ des fichiers statiques déposés à la racine, prêts pour Cloudflare Pages.
 
 ---
 
+## Nouveautés — refonte de l'interface (octobre 2026)
+
+Nouvelle présentation, fidèle à la maquette « TAF — refonte » :
+
+- **Liste**
+  - tâches regroupées par statut, chaque groupe repliable (le repli est mémorisé) ;
+  - filtre par statut en boutons, avec le nombre de tâches ;
+  - échéance relative : « dans 8 j », « 2 j de retard » ;
+  - initiales de la collaboration et tags en couleur ;
+  - un clic sur le sujet ouvre la fiche, un clic sur une autre cellule la modifie sur place (`Tab` passe toujours à la suivante).
+- **Colonnes affichées**
+  - au premier lancement de cette version, la liste ne garde que Sujet, Collaboration, Objectif, Date d'échéance et Action ;
+  - le statut est donné par les groupes, la date de création s'affiche sous le sujet ;
+  - tout se réaffiche depuis le bouton **Colonnes**.
+- **Fiche tâche**
+  - panneau latéral, statut en boutons, tags en étiquettes (Entrée ou virgule pour ajouter) ;
+  - difficulté à côté de la date ;
+  - bouton d'impression de la fiche.
+- **Kanban** : colonnes grises soulignées de la couleur du statut, cartes avec tags, initiales et échéance relative.
+- **Archives**
+  - chaque REX en carte à deux colonnes : contexte à gauche (durée, échéance tenue ou dépassée, difficulté), REX à droite ;
+  - nouveau filtre **REX à rédiger** ;
+  - le filtre par tag fonctionne désormais.
+- **Tableau de bord**
+  - six chiffres clés, dont le taux de réalisation ;
+  - tâches actives par mois de création, horizon des échéances, top des collaborations (en cours et archivées), prochaines échéances.
+- **Mode sombre**
+  - bouton lune / soleil dans l'en-tête, ou *Réglages → Confort → Apparence* (automatique, clair, sombre) ;
+  - l'impression reste toujours en noir sur blanc.
+- **Exporter et imprimer** : une seule fenêtre, ouverte par `Ctrl+P`, l'icône d'impression, *Exporter PDF* ou *Réglages*. Elle propose :
+  - la liste des tâches (PDF ou CSV, filtres actifs au choix) ;
+  - le tableau de bord (avec un encart « Points à remonter » en option) ;
+  - la synthèse REX (par période) ;
+  - la **fiche tâche imprimable** (nouvelle, A4 portrait, avec une zone de notes de réunion) ;
+  - la sauvegarde complète.
+- **Raccourci `/`** pour chercher.
+- **Mobile**
+  - cartes empilées, onglets pleine largeur ;
+  - filtres qui défilent sur une ligne ;
+  - bouton *Nouvelle tâche* fixé en bas de l'écran.
+
+Rien ne change dans les données : même clé `pic-majin:v1`, mêmes tables D1.
+
+---
+
 ## Nouveautés — liens et captures d'écran (octobre 2026)
 
 **Dans la fiche d'une tâche**, une section *Liens et captures* sous le REX :
@@ -40,10 +85,10 @@ des fichiers statiques déposés à la racine, prêts pour Cloudflare Pages.
 
 | Fichier | |
 |---|---|
-| `index.html` | modifié : feuille et scripts du module, état des captures, case « Inclure les captures » |
-| `app.js` | modifié : fiche, indicateurs, archives, synthèse, impression, export/import, synchro R2 |
-| `styles.css` | modifié : quelques règles en fin de fichier |
-| `sw.js` | modifié : nouveaux fichiers dans le cache hors ligne, version `taf-majin-v14` |
+| `index.html` | modifié : nouvelle structure (refonte), module, fenêtre d'export |
+| `app.js` | modifié : refonte des écrans, mode sombre, fenêtre d'export, fiche imprimable, pièces jointes, synchro R2 |
+| `styles.css` | **réécrit** : nouvelle charte écran clair / sombre ; ouverture animée et impressions conservées |
+| `sw.js` | modifié : nouveaux fichiers dans le cache hors ligne, version `taf-majin-v15` |
 | `_headers` | modifié : `js/*` et `css/*` jamais mis en cache |
 | `functions/api/[[path]].js` | modifié : route `/api/captures/:id` (R2), `r2` dans `/api/ping` |
 | `css/taf-pieces-jointes.css` | **nouveau** |
@@ -136,10 +181,11 @@ obligatoire : une ligne sans sujet est ignorée et signalée.
 | Touche | Effet |
 |---|---|
 | `N` | Nouvelle tâche |
+| `/` | Rechercher |
 | `Entrée` | Ajouter la note saisie |
 | `Tab` | Cellule suivante |
 | `Échap` | Annuler la saisie / fermer un panneau |
-| `Ctrl` + `P` | Imprimer la liste filtrée |
+| `Ctrl` + `P` | Exporter et imprimer (la fiche ouverte, sinon le document de l'onglet en cours) |
 | `Échap` | Passer l'ouverture animée |
 
 ---
