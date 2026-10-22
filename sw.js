@@ -6,7 +6,7 @@
    immédiatement, sans vider quoi que ce soit à la main, tout
    en gardant l'application utilisable hors ligne.
    ============================================================ */
-const CACHE = "taf-majin-v13";
+const CACHE = "taf-majin-v14";
 
 /* Ressources figées : elles ne changent qu'en cas de refonte visuelle. */
 const STATIC = [
@@ -15,7 +15,10 @@ const STATIC = [
 ];
 
 /* Code de l'application : toujours redemandé au réseau. */
-const CODE = ["./", "./index.html", "./styles.css", "./app.js", "./intro.js"];
+const CODE = ["./", "./index.html", "./styles.css", "./app.js", "./intro.js",
+  "./css/taf-pieces-jointes.css",
+  "./js/taf-liens.js", "./js/taf-images.js", "./js/taf-captures-db.js", "./js/taf-captures-sync.js",
+  "./js/taf-pieces-jointes.js", "./js/taf-rex-captures.js", "./js/taf-sauvegarde.js"];
 
 self.addEventListener("install", e => {
   e.waitUntil(

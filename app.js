@@ -88,6 +88,14 @@ function esc(s) {
 }
 const MONTHS = ["janv","févr","mars","avr","mai","juin","juil","août","sept","oct","nov","déc"];
 
+/* ---------- Pièces jointes (liens internet, captures d'écran) ----------
+   Module dans js/ : il range les images dans IndexedDB et, si la synchro
+   est active et le bucket R2 relié, les envoie sur Cloudflare R2. */
+const PJ = () => (window.TAF && window.TAF.piecesJointes) ? window.TAF : null;
+const aDesPJ = t => !!((t.liens || []).length || (t.captures || []).length);
+/* Copie des liens avec de nouveaux identifiants (duplication, récurrence) */
+const copierLiens = liens => (liens || []).map(l => ({ ...l, id: uid() }));
+
 /* ---------- État ---------- */
 let data = load();
 let view = "taches";
@@ -143,7 +151,7 @@ function pruneEmptyTasks() {
   const keys = ["sujet", "collaboration", "objectif", "echeance", "action", "commentaire", "rex"];
   let n = 0;
   live().forEach(t => {
-    if (keys.every(k => !String(t[k] || "").trim())) {
+    if (keys.every(k => !String(t[k] || "").trim()) && !aDesPJ(t)) {
       t.deleted = true;
       t.deletedAt = new Date().toISOString();
       touch(t);
@@ -157,8 +165,17 @@ function pruneEmptyTasks() {
 function purgeTombstones() {
   const limit = Date.now() - TOMBSTONE_DAYS * 864e5;
   const before = data.tasks.length;
+  const purgees = data.tasks.filter(t => t.deleted && new Date(t.deletedAt || 0).getTime() <= limit);
   data.tasks = data.tasks.filter(t => !t.deleted || new Date(t.deletedAt || 0).getTime() > limit);
   if (data.tasks.length !== before) save();
+  /* Une tâche supprimée garde ses images tant que l'annulation reste possible
+     sur un autre appareil ; elles partent avec la trace de suppression. */
+  if (PJ()) purgees.forEach(t => {
+    if (!(t.captures || []).length) return;
+    PJ().capturesDb.supprimerParTache(t.id).catch(() => {});
+    const s = PJ().capturesSync;
+    if (s && s.estActif()) t.captures.forEach(c => s.supprimer(c.id).catch(() => {}));
+  });
 }
 function save() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
@@ -307,6 +324,7 @@ function renderTable() {
           tags.forEach(tg => trow.appendChild(el("span", { class:"tag-chip" }, tg)));
           wrap.appendChild(trow);
         }
+        if (PJ() && aDesPJ(t)) wrap.appendChild(PJ().piecesJointes.indicateurs(t));
         cell.appendChild(wrap);
       } else if (c.type === "statut") {
         const st = t.statut || "en-cours";
@@ -520,6 +538,8 @@ function duplicateTask(id) {
     score: null,
     comments: [],
     linkedTo: [],
+    liens: copierLiens(src.liens),
+    captures: [],            // recopiées juste après, avec leurs propres identifiants
     notifiedFor: undefined,
     createdAt: now,
     updatedAt: now
@@ -529,6 +549,17 @@ function duplicateTask(id) {
   renderTable(); renderBoard();
   openSheet(copy.id);
   toast("Tâche dupliquée. Ajustez le sujet et l'échéance.", "ok");
+
+  /* Les images sont copiées sous de nouveaux identifiants : retirer une capture
+     de la copie ne doit pas l'effacer de l'original. */
+  if (PJ() && (src.captures || []).length) {
+    PJ().capturesDb.dupliquerVers(src.id, copy.id, PJ().liens.nouvelId).then(copies => {
+      copy.captures = copies.map(c => ({ id:c.id, nom:c.nom, largeur:c.largeur, hauteur:c.hauteur,
+        taille:c.taille, type:c.type, ajouteLe:c.ajouteLe }));
+      touch(copy); save(); queueSync(); renderView();
+      if (sheetId === copy.id) openSheet(copy.id);
+    }).catch(() => {});
+  }
 }
 
 function archiveTask(id, sourceEl) {
@@ -546,6 +577,7 @@ function archiveTask(id, sourceEl) {
   if (t.recurrence && t.recurrence.freq) {
     const next = { ...t, id:uid(), archived:false, archivedAt:undefined,
                    rex:"", score:null, comments:[], linkedTo:[],
+                   liens:copierLiens(t.liens), captures:[],
                    createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() };
     const base = t.echeance ? new Date(t.echeance + "T00:00:00") : new Date();
     const steps = { semaine:7, mois:30, trimestre:91 };
@@ -641,9 +673,39 @@ function ding() {
    Panneau détail
    ============================================================ */
 let sheetId = null, sheetIsNew = false;
+let sheetPJ = null, sheetRex = null;     // modules montés dans la fiche ouverte
+
+function demonterPJ() {
+  if (sheetPJ) { sheetPJ.detruire(); sheetPJ = null; }
+  if (sheetRex) { sheetRex.detruire(); sheetRex = null; }
+}
+
+/* Liens internet, captures d'écran et, pour une tâche archivée, le choix avant / après du REX */
+function buildSheetPJ(t, body) {
+  if (!PJ()) return;
+  body.appendChild(el("div", { class:"sheet-divider" }, "Liens et captures"));
+  const zone = el("div", { class:"form-field sheet-pj" });
+  body.appendChild(zone);
+  const zoneRex = t.archived ? el("div", { class:"form-field sheet-pj-rex" }) : null;
+  if (zoneRex) body.appendChild(zoneRex);
+
+  const monterRex = () => {
+    if (!zoneRex || !PJ().rexCaptures) return;
+    if (sheetRex) sheetRex.detruire();
+    sheetRex = PJ().rexCaptures.monter(zoneRex, { tache:t, onChange: changement });
+  };
+  function changement() {
+    touch(t); save(); queueSync();
+    monterRex();               // la liste avant / après suit les captures ajoutées ou retirées
+  }
+  sheetPJ = PJ().piecesJointes.monter(zone, { tache:t, onChange: changement });
+  monterRex();
+}
+
 function openSheet(id, opts) {
   const t = data.tasks.find(x => x.id === id);
   if (!t) return;
+  demonterPJ();
   sheetId = id;
   sheetIsNew = !!(opts && opts.isNew);
   const st = statusOf(t);
@@ -685,6 +747,8 @@ function openSheet(id, opts) {
     body.appendChild(wrap);
   });
 
+  buildSheetPJ(t, body);
+
   body.appendChild(el("div", { class:"sheet-divider" }, "Compléments"));
   buildSheetExtra(t, body);
 
@@ -707,7 +771,7 @@ function validateSheet() {
   const t = data.tasks.find(x => x.id === sheetId);
   if (t && sheetIsNew) {
     const keys = ["sujet","collaboration","objectif","echeance","action","commentaire","rex"];
-    if (keys.every(k => !String(t[k] || "").trim())) {
+    if (keys.every(k => !String(t[k] || "").trim()) && !aDesPJ(t)) {
       t.deleted = true; t.deletedAt = new Date().toISOString(); touch(t);
       save(); queueSync();
       closeSheet();
@@ -719,6 +783,7 @@ function validateSheet() {
   closeSheet();
 }
 function closeSheet() {
+  demonterPJ();
   $("#sheet-backdrop").hidden = true;
   document.body.style.overflow = "";
   sheetId = null;
@@ -765,6 +830,12 @@ function renderArchives() {
       bodyEl.appendChild(f);
     }
     card.appendChild(bodyEl);
+
+    if (PJ() && PJ().rexCaptures.aDesCapturesRex(t)) {
+      const slot = el("div", { class:"rex-captures" });
+      card.appendChild(slot);
+      PJ().rexCaptures.affichage(t).then(b => slot.appendChild(b));
+    }
 
     const acts = el("div", { class:"rex-actions" });
     acts.appendChild(el("button", { class:"mini-btn", "data-act":"open" }, t.rex ? "Modifier le REX" : "Écrire le REX"));
@@ -1186,6 +1257,8 @@ function buildPrintSynth(area) {
             }</div>` : ""}
             <div class="p-f p-rex"><span>${esc(labelOf("rex"))}</span><p>${
               esc((t.rex || "").trim() || "REX non rédigé.")}</p></div>
+            ${PJ() && PJ().rexCaptures.aDesCapturesRex(t)
+              ? `<div class="p-f p-rexcap"><span>Avant / après</span><div data-rexcap="${esc(t.id)}"></div></div>` : ""}
           </div>`;
         }).join("")}
       </section>`).join("");
@@ -1194,6 +1267,14 @@ function buildPrintSynth(area) {
     `<div class="p-foot"><span>Retours d'expérience — ${esc(d.bounds.label)}</span><span>by Majin</span></div>`;
 
   fitToPage(area);
+
+  /* Vignettes avant / après : chargées depuis IndexedDB, puis on recalcule l'échelle. */
+  const slots = $$("[data-rexcap]", area);
+  if (!slots.length || !PJ()) return Promise.resolve();
+  return Promise.all(slots.map(slot => {
+    const t = data.tasks.find(x => x.id === slot.dataset.rexcap);
+    return t ? PJ().rexCaptures.affichage(t, { impression:true }).then(b => slot.appendChild(b)) : null;
+  })).then(() => fitToPage(area), () => fitToPage(area));
 }
 
 function fitToPage(area) {
@@ -1206,8 +1287,8 @@ function fitToPage(area) {
 }
 
 function doPrint(mode) {
-  buildPrint(mode);
-  setTimeout(() => window.print(), 60);
+  /* buildPrint peut rendre une promesse (images à charger) : on l'attend. */
+  Promise.resolve(buildPrint(mode)).catch(() => {}).then(() => setTimeout(() => window.print(), 60));
 }
 
 /* ============================================================
@@ -1279,6 +1360,8 @@ function openCfg() {
     ul.appendChild(li);
   });
   renderSyncBlock();
+  majEtatCaptures();
+  majInfoExportImages();
   updatePushState();
   $("#cfg-intro").checked = data.settings.intro !== false;
   $("#cfg-introson").checked = data.settings.introSon !== false;
@@ -1317,8 +1400,28 @@ function updateNotifState() {
 
 /* Export / import */
 function exportJSON() {
-  download(`pic-majin-${todayISO()}.json`, JSON.stringify(data, null, 2), "application/json");
-  toast("Sauvegarde exportée.", "ok");
+  const avecImages = PJ() && $("#cfg-export-images") && $("#cfg-export-images").checked;
+  if (!avecImages) {
+    download(`pic-majin-${todayISO()}.json`, JSON.stringify(data, null, 2), "application/json");
+    toast("Sauvegarde exportée.", "ok");
+    return;
+  }
+  /* Même format qu'avant, avec un champ « images » en plus : les anciennes
+     versions de TAF l'ignorent, la nouvelle restaure les captures. */
+  toast("Préparation de la sauvegarde avec les images…", "ok");
+  PJ().sauvegarde.collecterImages(data.tasks.filter(t => !t.deleted)).then(r => {
+    download(`pic-majin-${todayISO()}.json`, JSON.stringify({ ...data, images:r.images }), "application/json");
+    toast(`Sauvegarde exportée avec ${r.nombre} image(s)` +
+      (r.manquantes ? ` · ${r.manquantes} introuvable(s) sur cet appareil` : "") + ".", r.manquantes ? "warn" : "ok");
+  }, () => toast("Lecture des images impossible : sauvegarde annulée.", "warn"));
+}
+function majInfoExportImages() {
+  const info = $("#export-images-info");
+  if (!info || !PJ()) return;
+  const e = PJ().sauvegarde.estimer({ taches: live() });
+  info.textContent = e.images
+    ? `${e.images} capture(s), environ ${PJ().images.formaterPoids(e.octets)} en plus`
+    : "aucune capture pour l'instant";
 }
 function exportCSV() {
   const c = visCols();
@@ -1387,6 +1490,13 @@ function importJSON(file) {
 
     migrateTasks();
     save(); queueSync(); renderAll();
+
+    /* Captures contenues dans la sauvegarde : on complète celles qui manquent ici. */
+    if (parsed.images && PJ()) {
+      PJ().sauvegarde.restaurerImages(parsed.images, data.tasks.filter(t => !t.deleted)).then(n => {
+        if (n) { toast(`${n} capture(s) restaurée(s).`, "ok"); renderAll(); }
+      });
+    }
 
     /* Compte rendu honnête : on distingue ce qui a été repris de ce
        qui n'était qu'une trace de suppression. */
@@ -1869,6 +1979,7 @@ function renderKanban() {
         card.appendChild(tr);
       }
       if (t.score) card.appendChild(el("span", { class:"kb-score" }, "★".repeat(t.score)));
+      if (PJ() && aDesPJ(t)) card.appendChild(PJ().piecesJointes.indicateurs(t));
       // drag
       card.addEventListener("dragstart", e => {
         e.dataTransfer.setData("text/plain", t.id);
@@ -2117,6 +2228,42 @@ function mergeRemote(payload) {
   return changed;
 }
 
+/* Les captures utilisent le même code d'espace que la synchro D1.
+   Elles ne partent vers R2 que si le projet a la liaison TAF_CAPTURES
+   (vérifié via /api/ping) ; sinon elles restent sur l'appareil. */
+async function configurerCaptures() {
+  if (!PJ() || !PJ().capturesSync) return;
+  const s = PJ().capturesSync;
+  if (!data.sync.enabled || !data.sync.space) {
+    s.configurer({ espace:"" });
+    majEtatCaptures();
+    return;
+  }
+  let r2 = data.sync.r2 === true;          // hors ligne : dernier état connu
+  try {
+    const r = await fetch(API + "/ping", { cache:"no-store" });
+    if (r.ok) { r2 = !!(await r.json()).r2; }
+  } catch (e) { /* hors ligne */ }
+  if (data.sync.r2 !== r2) { data.sync.r2 = r2; save(); }
+  s.configurer({ url: API + "/captures", espace: r2 ? data.sync.space : "" });
+  majEtatCaptures();
+  if (r2) s.toutSynchroniser(live(), t => { touch(t); save(); queueSync(); }).then(majEtatCaptures);
+}
+function majEtatCaptures() {
+  const line = $("#captures-state");
+  if (!line || !PJ() || !PJ().capturesSync) return;
+  const s = PJ().capturesSync;
+  if (!data.sync.enabled) { line.textContent = ""; return; }
+  if (!s.estActif()) {
+    line.textContent = "Captures d'écran : sur cet appareil uniquement (aucun bucket R2 relié au projet, voir docs/CLOUDFLARE-R2.md).";
+    return;
+  }
+  const attente = s.enAttente(live());
+  line.textContent = attente
+    ? `Captures d'écran : ${attente} en attente d'envoi vers R2.`
+    : "Captures d'écran : disponibles sur tous vos appareils (Cloudflare R2).";
+}
+
 async function enableSync(passphrase) {
   const code = String(passphrase || "").trim();
   if (code.length < 8) { toast("Le code d'espace doit faire au moins 8 caractères.", "warn"); return false; }
@@ -2126,6 +2273,7 @@ async function enableSync(passphrase) {
   save();
   await writeSpaceForWorker();
   await syncNow(false);
+  configurerCaptures();
   return true;
 }
 
@@ -2134,6 +2282,7 @@ function disableSync() {
   data.sync.space = "";
   data.sync.lastAt = null;
   save();
+  configurerCaptures();
   setSyncState("off");
   toast("Synchronisation désactivée. Les données restent sur cet appareil.", "ok");
 }
@@ -2329,6 +2478,11 @@ function renderSynth() {
         if (t.objectif) it.appendChild(el("p", { class:"synth-obj" }, labelOf("objectif") + " : " + t.objectif));
         it.appendChild(el("p", { class:"synth-rex" },
           (t.rex || "").trim() || "REX non rédigé."));
+        if (PJ() && PJ().rexCaptures.aDesCapturesRex(t)) {
+          const slot = el("div", { class:"rex-captures" });
+          it.appendChild(slot);
+          PJ().rexCaptures.affichage(t).then(b => slot.appendChild(b));
+        }
         sec.appendChild(it);
       });
       box.appendChild(sec);
@@ -2596,6 +2750,7 @@ function wire() {
   /* Raccourcis */
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") {
+      if (document.querySelector("dialog.pj-visionneuse[open]")) return;   // la visionneuse se ferme d'abord
       if (!$("#sheet-backdrop").hidden) closeSheet();
       else if (!$("#synth-backdrop").hidden) closeSynth();
       else if (!$("#cfg-backdrop").hidden) closeCfg();
@@ -2664,6 +2819,7 @@ function boot() {
 
   started.then(() => {
     if (data.sync.enabled) { writeSpaceForWorker(); syncNow(true); }
+    configurerCaptures();
     checkReminders();
   });
 
@@ -2673,7 +2829,7 @@ function boot() {
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) { refreshCounters(); checkReminders(); if (data.sync.enabled) syncNow(true); }
   });
-  window.addEventListener("online",  () => { if (data.sync.enabled) syncNow(true); });
+  window.addEventListener("online",  () => { if (data.sync.enabled) { syncNow(true); configurerCaptures(); } });
   window.addEventListener("offline", () => setSyncState("offline"));
 }
 boot();

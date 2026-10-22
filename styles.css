@@ -1257,3 +1257,25 @@ select.cell-editor:focus{outline:none;box-shadow:0 0 0 3px rgba(255,121,0,.25)}
 .p-item .p-journal p em{font-style:normal;font-weight:700;color:#555}
 .p-item .p-rex{border-left:2pt solid #FF7900;padding-left:4pt;margin-top:3pt}
 .p-item .p-rex p{font-size:7.5pt}
+
+
+/* ============================================================
+   Pièces jointes — intégration dans TAF
+   (le module a sa propre feuille : css/taf-pieces-jointes.css)
+   ============================================================ */
+.sheet-pj, .sheet-pj-rex{display:block}
+.rex-card .rex-captures{margin-top:12px}
+.synth-item .rex-captures{margin-top:8px}
+.synth-item .rex-paire{grid-template-columns:repeat(2,minmax(0,180px))}
+.sujet-wrap .pj-indicateurs{justify-content:center}
+.kb-card .pj-indicateurs{display:flex;margin-top:6px}
+.switch-row small{color:var(--o-grey-2,#595959);font-size:12px}
+@media print{
+  .p-rexcap > div{display:block}
+  .p-rexcap .rex-paire-print{display:grid}
+}
+/* Intitulés du module alignés sur ceux des champs de la fiche */
+.sheet-pj .pj-titre, .sheet-pj-rex .pj-titre, .sheet-pj .pj-compte, .sheet-pj-rex .pj-compte{
+  font-size:10px;text-transform:uppercase;letter-spacing:.11em;font-weight:700;color:var(--o-grey-3);
+}
+.sheet-pj .pj-compte, .sheet-pj-rex .pj-compte{color:var(--o-orange)}

@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="css/taf-pieces-jointes.css">
 </head>
 <body>
 
@@ -209,6 +210,7 @@
         </div>
         <div id="sync-active" hidden>
           <p class="cfg-note">Espace <code id="sync-fingerprint"></code> · <span id="sync-state"></span></p>
+          <p class="cfg-note" id="captures-state"></p>
           <div class="cfg-actions">
             <button class="ghost-btn" id="btn-sync-now">Synchroniser maintenant</button>
             <button class="danger-btn" id="btn-sync-off">Désactiver</button>
@@ -257,13 +259,14 @@
       </section>
       <section class="cfg-block">
         <h3>Mes données</h3>
-        <p class="cfg-note">Tout est stocké dans ce navigateur. Exportez pour sauvegarder ou changer d'appareil.</p>
+        <p class="cfg-note">Tout est stocké dans ce navigateur. Exportez pour sauvegarder ou changer d'appareil : l'export JSON peut emporter les captures d'écran, l'import les restaure.</p>
         <div class="cfg-actions">
           <button class="ghost-btn" id="cfg-export">Exporter (JSON)</button>
           <button class="ghost-btn" id="cfg-csv">Exporter (CSV)</button>
           <button class="ghost-btn" id="cfg-import">Importer…</button>
           <input type="file" id="file-import" accept=".json,.csv,.txt,application/json,text/csv" hidden>
         </div>
+        <label class="switch-row"><input type="checkbox" id="cfg-export-images" checked><span>Inclure les captures d'écran dans l'export JSON · <small id="export-images-info"></small></span></label>
         <h4 class="cfg-sub">Ajouter des tâches en lot</h4>
         <p class="cfg-note">Téléchargez le modèle, complétez-le dans votre tableur, puis réimportez-le. Une ligne par tâche ; seule la colonne Sujet est obligatoire.</p>
         <div class="cfg-actions">
@@ -309,6 +312,14 @@
 <div class="toast-stack" id="toasts" aria-live="polite"></div>
 
 <script src="intro.js"></script>
+<!-- Pièces jointes : liens internet, captures d'écran, REX avant / après, sauvegarde avec images -->
+<script src="js/taf-liens.js"></script>
+<script src="js/taf-images.js"></script>
+<script src="js/taf-captures-db.js"></script>
+<script src="js/taf-captures-sync.js"></script>
+<script src="js/taf-pieces-jointes.js"></script>
+<script src="js/taf-rex-captures.js"></script>
+<script src="js/taf-sauvegarde.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

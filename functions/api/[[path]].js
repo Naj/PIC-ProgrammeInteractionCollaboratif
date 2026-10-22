@@ -1,12 +1,14 @@
 /* ============================================================
-   PIC — API de synchronisation (Cloudflare Pages Functions + D1)
-   Liaison attendue : DB  →  base D1 « pic »
+   TAF — API de synchronisation (Cloudflare Pages Functions + D1 + R2)
+   Liaisons attendues :
+     DB            →  base D1 « pic »          (tâches, réglages, rappels)
+     TAF_CAPTURES  →  bucket R2 « taf-captures » (captures d'écran — facultatif)
    ============================================================ */
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type,X-TAF-Espace,X-TAF-Tache,X-TAF-Nom",
   "Cache-Control": "no-store"
 };
 
@@ -28,8 +30,10 @@ export async function onRequest(context) {
 
   try {
     if (path === "ping") {
-      return json({ ok: true, db: !!env.DB, push: !!env.VAPID_PUBLIC });
+      return json({ ok: true, db: !!env.DB, push: !!env.VAPID_PUBLIC, r2: !!env.TAF_CAPTURES });
     }
+    /* Les captures n'ont pas besoin de D1 : elles passent avant la vérification de la base. */
+    if (path.startsWith("captures/")) return await captures(request, env, path.slice(9), url);
     if (!env.DB) return json({ error: "Base D1 non liée à ce projet (liaison « DB » manquante)." }, 503);
 
     if (path === "sync"             && request.method === "POST") return await sync(request, env);
@@ -127,6 +131,59 @@ async function sync(request, env) {
   });
 }
 const safeParse = s => { try { return JSON.parse(s); } catch (e) { return null; } };
+
+/* ---------- Captures d'écran (R2) ----------
+   GET/PUT/DELETE /api/captures/:id            → image complète
+   GET/PUT        /api/captures/:id?type=vignette → vignette
+   L'en-tête X-TAF-Espace porte l'empreinte du code d'espace, comme /api/sync :
+   les images sont rangées par espace, un espace ne voit jamais celles d'un autre. */
+const CAPTURE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const CAPTURE_MAX = 10 * 1024 * 1024;   // 10 Mo ; une capture compressée pèse ~200 Ko
+
+async function captures(request, env, id, url) {
+  if (!env.TAF_CAPTURES) {
+    return json({ error: "Stockage R2 non lié à ce projet (liaison « TAF_CAPTURES » manquante).", code: "r2-absent" }, 503);
+  }
+  const space = request.headers.get("X-TAF-Espace") || "";
+  if (!isSpace(space)) return json({ error: "Espace refusé." }, 401);
+  if (!CAPTURE_ID.test(id)) return json({ error: "Identifiant invalide." }, 400);
+
+  const dossier = url.searchParams.get("type") === "vignette" ? "/vignettes/" : "/captures/";
+  const key = space + dossier + id;
+
+  if (request.method === "GET") {
+    const obj = await env.TAF_CAPTURES.get(key);
+    if (!obj) return json({ error: "Capture introuvable." }, 404);
+    const headers = new Headers(CORS);
+    obj.writeHttpMetadata(headers);
+    headers.set("ETag", obj.httpEtag);
+    headers.set("Cache-Control", "private, max-age=31536000, immutable");   // une capture ne change jamais
+    return new Response(obj.body, { headers });
+  }
+
+  if (request.method === "PUT") {
+    const type = request.headers.get("Content-Type") || "";
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(type)) return json({ error: "Seules les images PNG, JPG, WebP ou GIF sont acceptées." }, 415);
+    if (Number(request.headers.get("Content-Length") || 0) > CAPTURE_MAX) return json({ error: "Image trop lourde." }, 413);
+    const body = await request.arrayBuffer();
+    if (!body.byteLength) return json({ error: "Image vide." }, 400);
+    if (body.byteLength > CAPTURE_MAX) return json({ error: "Image trop lourde." }, 413);
+    let nom = "";
+    try { nom = decodeURIComponent(request.headers.get("X-TAF-Nom") || ""); } catch (e) { nom = ""; }
+    await env.TAF_CAPTURES.put(key, body, {
+      httpMetadata: { contentType: type },
+      customMetadata: { tacheId: (request.headers.get("X-TAF-Tache") || "").slice(0, 64), nom: nom.slice(0, 200) }
+    });
+    return json({ ok: true }, 201);
+  }
+
+  if (request.method === "DELETE") {
+    await env.TAF_CAPTURES.delete([space + "/captures/" + id, space + "/vignettes/" + id]);
+    return new Response(null, { status: 204, headers: CORS });
+  }
+
+  return json({ error: "Méthode non autorisée." }, 405);
+}
 
 /* ---------- Notifications ---------- */
 function vapid(env) {

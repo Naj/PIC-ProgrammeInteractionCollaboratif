@@ -7,6 +7,53 @@ des fichiers statiques déposés à la racine, prêts pour Cloudflare Pages.
 
 ---
 
+## Nouveautés — liens et captures d'écran (octobre 2026)
+
+**Dans la fiche d'une tâche**, une section *Liens et captures* sous le REX :
+
+- **Liens internet**
+  - collez une adresse, ou plusieurs d'un coup ;
+  - chaque lien s'ouvre dans un nouvel onglet, se copie (ordinateur) ou se partage (mobile).
+- **Captures d'écran**
+  - `Win+Maj+S` puis `Ctrl+V` dans la fiche ouverte, glisser-déposer, ou *Ajouter une capture* ;
+  - sur téléphone, boutons **Photo** et **Galerie** ;
+  - les images sont réduites et compressées en WebP (environ 100 à 300 Ko) et rangées dans le navigateur (IndexedDB, pas `localStorage`) ;
+  - clic sur une vignette pour l'agrandir ou la télécharger.
+- **Indicateurs** dans le tableau, les fiches mobiles et le Kanban : icône lien + nombre, icône image + nombre.
+- **REX avant / après**
+  - dans la fiche d'une tâche archivée, marquez une capture *Avant* et une *Après* ;
+  - elles s'affichent sur la carte d'archive, dans la Synthèse REX et sur son impression.
+- **Sauvegarde avec images** : *Réglages* → *Mes données* → case *Inclure les captures d'écran*.
+  - L'export JSON garde le même format, avec un champ `images` en plus.
+  - L'import restaure les captures qui manquent sur l'appareil.
+- **Synchronisation des captures** par Cloudflare R2, avec le **même code d'espace** que la synchro D1 (voir [docs/CLOUDFLARE-R2.md](docs/CLOUDFLARE-R2.md)).
+  - Sans R2, tout fonctionne : les captures restent sur l'appareil où elles ont été ajoutées.
+
+**Comportements à connaître :**
+
+- *Dupliquer* recopie les liens et les captures sous de nouveaux identifiants : retirer une capture de la copie ne touche pas l'original.
+- Une tâche récurrente replanifiée reprend les liens, pas les captures.
+- Une tâche supprimée garde ses images 120 jours, comme sa trace de suppression, puis elles sont effacées ici et sur R2.
+- Une nouvelle tâche qui n'a qu'un lien ou une capture n'est pas considérée comme vide.
+
+**Fichiers ajoutés ou modifiés par cette version :**
+
+| Fichier | |
+|---|---|
+| `index.html` | modifié : feuille et scripts du module, état des captures, case « Inclure les captures » |
+| `app.js` | modifié : fiche, indicateurs, archives, synthèse, impression, export/import, synchro R2 |
+| `styles.css` | modifié : quelques règles en fin de fichier |
+| `sw.js` | modifié : nouveaux fichiers dans le cache hors ligne, version `taf-majin-v14` |
+| `_headers` | modifié : `js/*` et `css/*` jamais mis en cache |
+| `functions/api/[[path]].js` | modifié : route `/api/captures/:id` (R2), `r2` dans `/api/ping` |
+| `css/taf-pieces-jointes.css` | **nouveau** |
+| `js/taf-liens.js`, `js/taf-images.js`, `js/taf-captures-db.js`, `js/taf-captures-sync.js`, `js/taf-pieces-jointes.js`, `js/taf-rex-captures.js`, `js/taf-sauvegarde.js` | **nouveaux** |
+| `docs/CLOUDFLARE-R2.md` | **nouveau** : pas à pas R2 |
+
+Les données existantes ne bougent pas : même clé `pic-majin:v1`, mêmes tables D1, aucune migration à lancer.
+
+---
+
 ## Ce que fait l'application
 
 **Tâches**
@@ -42,7 +89,14 @@ des fichiers statiques déposés à la racine, prêts pour Cloudflare Pages.
 - Renommage de chaque intitulé de colonne, masquage à l'écran comme à l'impression.
 - Rappels d'échéance : bandeau dans l'application + notification système si autorisée. Délai réglable (jour même à 7 jours avant).
 - Son de validation, affichage compact.
-- Export JSON (sauvegarde complète), export CSV (point-virgule, ouvrable dans Excel), import JSON.
+- Export JSON (sauvegarde complète), export CSV (point-virgule, ouvrable dans Excel).
+- Import JSON pour restaurer une sauvegarde : fusion par horodatage, la version la plus récente l'emporte.
+- **Import CSV pour ajouter des tâches en lot.** Le bouton *Télécharger le modèle CSV* produit un fichier aux intitulés de vos colonnes du moment, avec trois exemples à remplacer. Complétez-le dans votre tableur, réimportez-le : une ligne devient une tâche.
+
+Le lecteur CSV accepte le point-virgule comme la virgule, les guillemets, les retours à la ligne
+dans une cellule, les dates en `26/08/2026` comme en `2026-08-26`, les statuts avec ou sans
+accents, et la difficulté en chiffre (1-5) comme en étoiles. Seule la colonne **Sujet** est
+obligatoire : une ligne sans sujet est ignorée et signalée.
 
 **Synchronisation multi-appareils**
 - Un même **code d'espace** saisi sur plusieurs appareils suffit : tout se retrouve.
@@ -152,6 +206,9 @@ Puis dans le projet Pages → **Settings** → **Bindings** → **D1 database bi
 |---|---|
 | `DB` | `pic` |
 
+Facultatif, pour que les captures d'écran suivent sur tous les appareils : une liaison R2
+`TAF_CAPTURES` vers un bucket `taf-captures` (pas à pas : [docs/CLOUDFLARE-R2.md](docs/CLOUDFLARE-R2.md)).
+
 Vérifiez avec `https://<projet>.pages.dev/api/ping` → doit répondre `{"ok":true,"db":true,…}`.
 
 Dans l'application : **Réglages** → **Synchronisation** → saisissez un code d'espace
@@ -212,11 +269,15 @@ index.html                    structure de l'application
 styles.css                    charte Orange, animations, responsive, feuilles d'impression
 app.js                        logique complète (données, tri, archivage, REX, synchro, synthèse)
 intro.js                      ouverture animée de 10 s et sa partition Web Audio
+js/                           liens, captures d'écran, REX avant / après, sauvegarde avec images
+css/taf-pieces-jointes.css    styles des liens et captures
+docs/CLOUDFLARE-R2.md         pas à pas pour synchroniser les captures
 sw.js                         service worker : cache hors ligne + réception des rappels
 manifest.webmanifest          déclaration PWA
 schema.sql                    tables D1 (tasks, meta, subs)
-functions/api/[[path]].js     API de synchronisation servie par Pages Functions
+functions/api/[[path]].js     API de synchronisation (D1) et des captures (R2), servie par Pages Functions
 worker-rappels/               worker Cron qui envoie les rappels du matin
+modele-taches-TAF.csv         modèle vierge pour l'import en lot
 tools/generer-cles-vapid.html génération des clés dans le navigateur, sans installation
 tools/generate-vapid.mjs      même chose en ligne de commande
 favicon.svg                   icône navigateur
@@ -236,8 +297,16 @@ jaune `#FFD200` pour l'imminent. Angles droits, pas d'arrondi, typographie Helve
 
 ## Mettre à jour la version en ligne
 
-Après modification de `app.js` ou `styles.css`, incrémentez la constante `CACHE` dans `sw.js`
-(`taf-majin-v2` → `taf-majin-v3`) pour forcer les navigateurs à récupérer les nouveaux fichiers.
+Rien à faire : `git push` suffit. Le service worker interroge le réseau en premier pour
+`index.html`, `app.js`, `styles.css` et `intro.js`, et `_headers` interdit leur mise en cache
+côté navigateur comme côté CDN. Un déploiement s'applique au rechargement suivant.
+
+Le cache ne sert plus que de secours hors ligne : si le réseau est absent, la dernière
+version connue est servie. Les icônes et le manifeste, eux, restent en cache une semaine.
+
+Quand une nouvelle version prend la main sur un onglet déjà ouvert, la page se recharge
+une fois d'elle-même pour que l'écran corresponde au code servi. L'application vérifie
+également l'existence d'une mise à jour toutes les quinze minutes.
 
 ## Détails d'implémentation utiles à savoir
 
